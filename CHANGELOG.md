@@ -5,7 +5,50 @@ Format: version / phase / date / summary / test count.
 
 ---
 
-## H.2 — Docker Compose Stack Module (May 2026)
+## H.3 — Database Module (May 2026)
+
+**189 bats tests · 776 Python tests (unchanged)**
+
+Establishes the database substrate for H.4 (WordPress install) and H.6 (backup).
+Defining property: **credentials never appear in logs** — verified by sentinel-grep CI guard.
+
+### Three new modules under modules/db/
+- `wait.sh` — `wpgovern::db::wait_for_ready()`: 3 failure paths, all `>/dev/null 2>&1`
+- `credentials.sh` — `ensure_backup_password`, `generate_age_key`, `encrypt_state`
+- `users.sh` — `verify_application_user`, `create_backup_user` (exact 4 privileges)
+
+### age dependency added (packages.sh)
+Age-keygen and age CLI added to required package list. Used for credential
+encryption here and will be used for backup encryption in H.6.
+
+### Three coordinated env-var sites for WPGOVERN_DB_BACKUP_PASSWORD
+env.example, whitelist, validation — all three land together per Lesson 2.
+
+### 25 new bats tests across 5 new test files
+sentinel-grep CI guard verifies credentials-not-in-logs across the entire db phase.
+
+---
+
+
+
+**164 bats tests · 776 Python tests (unchanged)**
+
+Closes nine blockers + four test-discipline items from layered external review of H.2.
+
+### H.2.1-1 (High) — local outside function → `_wpgovern_stack_wait_healthy()` wrapper
+### H.2.1-2 (High) — Three sites: images.sh + compose.sh + four test files → four services
+### H.2.1-3 (High) — Two sites: Caddy docroot mount (compose.sh) + root directive (caddyfile.sh)
+### H.2.1-4 (Med-High) — Three sites: explicit `rm -f "$tmp_file"` at every exit path
+### H.2.1-5 (Med-High) — `|| true` on grep in images.sh digest extraction (errexit-safe)
+### H.2.1-6 (Med-High) — RFC hostname regex in validate_env; whitespace added to metacharacter rejection
+### H.2.1-7 (Med-High) — `_wpgovern_validate_db_password()` in validate_env; ^[A-Za-z0-9._@%-]{24,128}$
+### H.2.1-8 (Med) — `_wpgovern_is_valid_digest()` helper; persisted digests validated before reuse
+### H.2.1-9 (Med) — Three sites: operator-modification detection + WARNING in all three generators
+### H.2.1-10/11/12/13 — Test discipline: four-service assertions, real integration tests, temp-file/injection negatives
+
+---
+
+
 
 **144 bats tests · 776 Python tests (unchanged)**
 

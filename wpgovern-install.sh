@@ -143,6 +143,9 @@ fi
 source "${WPGOVERN_INSTALLER_DIR}/core/state.sh"
 wpgovern::state::init
 
+# H.2/H.3: record env file path in state for use across phase boundaries
+wpgovern::state::set_fact "bootstrap.env_file_path" "${WPGOVERN_ENV_FILE_PATH:-}"
+
 # Record OS facts in state (now that state is initialized)
 wpgovern::state::set_fact "host.os.id" "$_os_id"
 wpgovern::state::set_fact "host.os.version_id" "$_os_version_id"
@@ -222,26 +225,57 @@ else
     fi
 
     # Step 5: Wait for all containers healthy (120s timeout)
-    local _stack_timeout=120
-    local _stack_elapsed=0
-    while [[ $_stack_elapsed -lt $_stack_timeout ]]; do
-        local _unhealthy_count
-        _unhealthy_count=$(docker compose ps --format json 2>/dev/null \
-            | jq -r 'select(.Health != null and .Health != "healthy") | .Name' \
-            | wc -l)
-        if [[ "$_unhealthy_count" -eq 0 ]]; then
-            break
-        fi
-        sleep 5
-        _stack_elapsed=$((_stack_elapsed + 5))
-    done
+    # H.2.1-1: wrapped in function so 'local' scoping is valid
+    _wpgovern_stack_wait_healthy() {
+        local timeout=120
+        local elapsed=0
+        local unhealthy_count
+        while [[ $elapsed -lt $timeout ]]; do
+            unhealthy_count=$(docker compose ps --format json 2>/dev/null \
+                | jq -r 'select(.Health != null and .Health != "healthy") | .Name' \
+                | wc -l)
+            if [[ "$unhealthy_count" -eq 0 ]]; then
+                return 0
+            fi
+            sleep 5
+            elapsed=$((elapsed + 5))
+        done
+        return 1
+    }
 
-    if [[ $_stack_elapsed -ge $_stack_timeout ]]; then
+    if ! _wpgovern_stack_wait_healthy; then
         wpgovern::state::mark_phase_failed "stack" \
-            "stack failed to reach healthy state within ${_stack_timeout}s"
+            "stack failed to reach healthy state within 120s"
         exit 1
     fi
 
     wpgovern::state::mark_phase_complete "stack"
     wpgovern::bootstrap::log "[H.2] stack phase complete"
+fi
+
+# ============================================================
+# DB phase: wait-for-ready + credentials + backup user
+# ============================================================
+if wpgovern::state::phase_complete "db"; then
+    wpgovern::bootstrap::log "DB phase already complete — skipping"
+else
+    wpgovern::bootstrap::log "[H.3] starting db phase"
+
+    # shellcheck source=modules/db/wait.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/db/wait.sh"
+    wpgovern::db::wait_for_ready
+
+    # shellcheck source=modules/db/credentials.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/db/credentials.sh"
+    wpgovern::db::credentials::ensure_backup_password
+    wpgovern::db::credentials::generate_age_key
+    wpgovern::db::credentials::encrypt_state
+
+    # shellcheck source=modules/db/users.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/db/users.sh"
+    wpgovern::db::users::verify_application_user
+    wpgovern::db::users::create_backup_user
+
+    wpgovern::state::mark_phase_complete "db"
+    wpgovern::bootstrap::log "[H.3] db phase complete"
 fi
