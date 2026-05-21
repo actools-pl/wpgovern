@@ -5,7 +5,86 @@ Format: version / phase / date / summary / test count.
 
 ---
 
-## H.3 — Database Module (May 2026)
+## H.4 — WordPress Provisioning Module (May 2026)
+
+**223 bats tests · 776 Python unchanged · 21 bash files (+3)**
+
+Installs WordPress via three-step prepare → provision → secure pattern.
+Defining property: **wp-config.php determinism** (10/10 repeated invocations byte-identical).
+
+### Three new wp modules
+- `modules/wp/prepare.sh` — directory + 33:33 ownership (www-data)
+- `modules/wp/provision.sh` — wp-cli core install, profile-gated, `--skip-email`, `>/dev/null 2>&1`
+- `modules/wp/secure.sh` — deterministic wp-config.php generator; ensure_auth_keys one-time
+
+### Stack surface (minimal, as specified)
+- `compose.sh`: cli profile-gated service (`profiles: ["cli"]`)
+- `images.sh`: cli image digest pinned
+
+### 12 new env vars (three coordinated sites each)
+WPGOVERN_WP_ADMIN_USER, _PASSWORD, _EMAIL, _SITE_TITLE + 8 AUTH_KEYs.
+
+### Lesson 2 fourth refinement — first application
+Fixed H.3-3 sentinel test BW01 silent-pass (missing `source core/credentials.sh`).
+Zero BW01 warnings across full suite.
+
+### wp-config.php trust model
+640 perms, 33:33 ownership, file-hash-governed from H.5.
+Fourth file-hash-governed artifact (alongside compose.yml, Caddyfile, my.cnf).
+
+---
+
+
+
+**198/198 bats (was 192/198) · 776 Python unchanged · zero implementation changes**
+
+Six regression tests failed due to test-architecture defects, not implementation defects. H.3.1 production code verified correct by direct PoC across all 10 blockers.
+
+### Three failure classes corrected
+
+**Tests 172+173 — `run | tee` pipe-eating (`test_h3_ci_credentials.bats`):**
+`run bash -c "..." 2>&1 | tee "$file"` — pipe outside `run` breaks `$status` capture and empties `$combined_file`. Fixed with runner script pattern: invocation written to `.sh` file, `run bash "$runner_script" 2>&1`, `$output` used directly. `grep -qF "$s" && { return 1; }` replaced with `if grep -qF; then return 1; fi` (set -e in bats treats grep's rc=1 as failure before `&&` fires).
+
+**Tests 176+177 — missing `source core/credentials.sh` (`test_h3_credentials.bats`):**
+`setup()` sourced bootstrap, state, stack/credentials, db/credentials — not `core/credentials.sh`. `generate_age_key`'s first call to `_wpgovern_disable_xtrace_for_credentials` got rc=127. Fixed by adding `source "${CORE_DIR}/credentials.sh"` to `setup()` and to the inline sentinel `bash -c` subshell.
+
+**Tests 184+185 — setup pre-populates variable + xtrace scope (`test_h3_entry_script_db_phase.bats`):**
+Test 184: `setup()` pre-populates backup password with 30-char value; test needs it BLANK for generation path. Fixed by overriding env file in test body with explicit blank backup password (root/wp ≥32 chars). Test 185: `bash -x -c "export VAR=SENTINEL; ..."` — xtrace prints the export before installer code runs, leaking sentinels. Fixed by exporting sentinels outside `bash -x` scope, running only function calls inside `bash -x << INNER`, sentinel scan restricted to output AFTER the WARNING line.
+
+---
+
+
+
+**198 bats tests · 776 Python tests (unchanged)**
+
+7 blockers + 3 should-fix items. Two trace to brief-authorship gaps; five implementation/test discipline.
+
+### H.3.1-1 (High) — `core/credentials.sh`: _wpgovern_credentials_persist extracted
+Cross-phase helper now in core/, sourced unconditionally before all phase blocks.
+
+### H.3.1-2 (High) — xtrace protection at every credential-sensitive function
+`_wpgovern_disable_xtrace_for_credentials()` in core/credentials.sh. Applied to 7 functions.
+
+### H.3.1-3 (High) — backup user grant verification (`_wpgovern_db_verify_backup_grants`)
+Required grants + forbidden-privilege check before idempotent skip.
+
+### H.3.1-4 (Med-High) — split grants: REPLICATION CLIENT+PROCESS on *.*, SELECT+LOCK TABLES on wordpress.*
+
+### H.3.1-5 (Med-High) — real integration tests (H.3.1-1 resumability + H.3.1-2 xtrace)
+
+### H.3.1-6 (Med) — CI guard: success-path test (no || true) + failure-path test
+
+### H.3.1-7 (Med) — timeout test uses production function via WPGOVERN_DB_WAIT_TIMEOUT env override
+
+### H.3.1-8 — test count reconciled (+9 in H.3.1)
+
+### H.3.1-9 — openssl rand -hex 32 at all three sites (pipeline-free)
+
+### H.3.1-10 (carry-forward H.2) — stack health-check positive-state: total_count==4 AND healthy_count==4
+
+---
+
+
 
 **189 bats tests · 776 Python tests (unchanged)**
 

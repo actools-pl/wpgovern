@@ -141,6 +141,10 @@ fi
 # ---------------------------------------------------------------------------
 # shellcheck source=core/state.sh
 source "${WPGOVERN_INSTALLER_DIR}/core/state.sh"
+# H.3.1-1: core/credentials.sh sourced unconditionally so _wpgovern_credentials_persist
+# and _wpgovern_disable_xtrace_for_credentials are available across ALL phase boundaries
+# shellcheck source=core/credentials.sh
+source "${WPGOVERN_INSTALLER_DIR}/core/credentials.sh"
 wpgovern::state::init
 
 # H.2/H.3: record env file path in state for use across phase boundaries
@@ -224,21 +228,35 @@ else
         exit 1
     fi
 
-    # Step 5: Wait for all containers healthy (120s timeout)
-    # H.2.1-1: wrapped in function so 'local' scoping is valid
+    # H.3.1-10: positive-state check — require expected_services ALL healthy
+    # Prevents false-positive when docker compose ps returns empty (transient boot).
     _wpgovern_stack_wait_healthy() {
         local timeout=120
         local elapsed=0
-        local unhealthy_count
+        local expected_services=4   # caddy, mariadb, php, wordpress (H.2.1-2)
+        local healthy_count total_count ps_output
+
         while [[ $elapsed -lt $timeout ]]; do
-            unhealthy_count=$(docker compose ps --format json 2>/dev/null \
-                | jq -r 'select(.Health != null and .Health != "healthy") | .Name' \
-                | wc -l)
-            if [[ "$unhealthy_count" -eq 0 ]]; then
+            ps_output="$(docker compose ps --format json 2>/dev/null || true)"
+
+            # Empty output = containers not yet created — keep waiting
+            if [[ -z "$ps_output" ]]; then
+                sleep 5; elapsed=$((elapsed + 5)); continue
+            fi
+
+            healthy_count="$(echo "$ps_output" \
+                | jq -r 'select(.Health == "healthy") | .Name' \
+                | wc -l)"
+            total_count="$(echo "$ps_output" \
+                | jq -r '.Name' \
+                | wc -l)"
+
+            if [[ "$total_count" -eq "$expected_services" ]] && \
+               [[ "$healthy_count" -eq "$expected_services" ]]; then
                 return 0
             fi
-            sleep 5
-            elapsed=$((elapsed + 5))
+
+            sleep 5; elapsed=$((elapsed + 5))
         done
         return 1
     }
@@ -278,4 +296,54 @@ else
 
     wpgovern::state::mark_phase_complete "db"
     wpgovern::bootstrap::log "[H.3] db phase complete"
+fi
+
+# ============================================================
+# WP phase: prepare + provision + secure
+# ============================================================
+if wpgovern::state::phase_complete "wp"; then
+    wpgovern::bootstrap::log "WP phase already complete — skipping"
+else
+    wpgovern::bootstrap::log "[H.4] starting wp phase"
+
+    # shellcheck source=modules/wp/prepare.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/wp/prepare.sh"
+    wpgovern::wp::prepare
+
+    # shellcheck source=modules/wp/provision.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/wp/provision.sh"
+    wpgovern::wp::provision
+
+    # shellcheck source=modules/wp/secure.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/wp/secure.sh"
+    wpgovern::wp::secure::ensure_auth_keys
+    wpgovern::wp::secure::generate_config
+
+    wpgovern::state::mark_phase_complete "wp"
+    wpgovern::bootstrap::log "[H.4] wp phase complete"
+fi
+
+# ============================================================
+# WP phase: prepare + provision + secure
+# ============================================================
+if wpgovern::state::phase_complete "wp"; then
+    wpgovern::bootstrap::log "WP phase already complete — skipping"
+else
+    wpgovern::bootstrap::log "[H.4] starting wp phase"
+
+    # shellcheck source=modules/wp/prepare.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/wp/prepare.sh"
+    wpgovern::wp::prepare
+
+    # shellcheck source=modules/wp/provision.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/wp/provision.sh"
+    wpgovern::wp::provision
+
+    # shellcheck source=modules/wp/secure.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/wp/secure.sh"
+    wpgovern::wp::secure::ensure_auth_keys
+    wpgovern::wp::secure::generate_config
+
+    wpgovern::state::mark_phase_complete "wp"
+    wpgovern::bootstrap::log "[H.4] wp phase complete"
 fi
