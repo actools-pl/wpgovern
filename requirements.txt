@@ -1,0 +1,12 @@
+# Test-only dependencies for WPGovern.
+#
+# DO NOT use this file as the complete install path.
+# The runtime dependency (typer) is not listed here.
+#
+# Use instead:
+#   pip install -e ".[test]"
+#
+# This file exists for CI environments that need explicit dependency
+# pinning separate from pyproject.toml.
+pytest>=8.0
+hypothesis>=6.100

@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wpgovern"
+version = "0.1.0"
+description = "Governance control plane for WordPress installations: signed approvals, tamper-evident audit, reconciliation, and break-glass."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [
+    { name = "WPGovern Maintainers" },
+]
+keywords = ["governance", "wordpress", "audit", "approval"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "hypothesis>=6.100",
+]
+
+[project.scripts]
+wpgovern = "wpgovern.cli:main"
+
+[project.urls]
+
+
+[tool.setuptools.package-dir]
+"wpgovern" = "wpgovern"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["wpgovern*"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+]
+markers = [
+    "hypothesis_deep: Hypothesis tests with extended example budget (500 examples).",
+]
