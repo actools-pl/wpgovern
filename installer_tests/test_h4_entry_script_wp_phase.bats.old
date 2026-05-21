@@ -1,0 +1,183 @@
+#!/usr/bin/env bats
+# =============================================================================
+# test_h4_entry_script_wp_phase.bats — Real entry-script integration for wp phase
+#
+# H.4-11: NO no-op stubs — real wp modules sourced (Lesson 1 + H.3.1.1).
+# =============================================================================
+
+REPO_DIR="$(cd "${BATS_TEST_DIRNAME}/.." && pwd)"
+
+setup() {
+    TEST_TMPDIR="$(mktemp -d)"
+    MOCK_BIN="${TEST_TMPDIR}/mock_bin"
+    mkdir -p "${TEST_TMPDIR}/install" "${TEST_TMPDIR}/logs" "$MOCK_BIN"
+
+    ENV_FILE="${TEST_TMPDIR}/wpgovern.env"
+    cat > "$ENV_FILE" << ENV
+WPGOVERN_OPERATOR_EMAIL="test@example.com"
+WPGOVERN_INSTALL_DIR="${TEST_TMPDIR}/install"
+WPGOVERN_LOG_DIR="${TEST_TMPDIR}/logs"
+WPGOVERN_STATE_FILE="${TEST_TMPDIR}/install/.state.json"
+WPGOVERN_DOMAIN="test.example.com"
+WPGOVERN_DB_ROOT_PASSWORD="testroot1234567890123456789012abcd"
+WPGOVERN_DB_WP_PASSWORD="testwp12345678901234567890123abcde"
+WPGOVERN_DB_BACKUP_PASSWORD="testbkup1234567890123456789012abc"
+WPGOVERN_WP_ADMIN_USER="admin"
+WPGOVERN_WP_ADMIN_PASSWORD="testadmin1234567890123456789012"
+WPGOVERN_WP_ADMIN_EMAIL="admin@example.com"
+WPGOVERN_WP_SITE_TITLE="Test Site"
+ENV
+    chmod 600 "$ENV_FILE"
+
+    STATE_FILE="${TEST_TMPDIR}/install/.state.json"
+
+    # Mock docker: all compose calls succeed; wp core is-installed returns 1 (not installed)
+    cat > "${MOCK_BIN}/docker" << 'DOCKERMOCK'
+#!/usr/bin/env bash
+if [[ "$1 $2" == "compose ps" ]]; then
+    for svc in caddy mariadb php wordpress; do
+        printf '{"Name":"%s","Health":"healthy"}\n' "$svc"
+    done
+    exit 0
+fi
+if [[ "$1" == "compose" ]]; then
+    [[ "$@" == *"core is-installed"* ]] && exit 1  # not yet installed
+    [[ "$@" == *"core install"* ]] && exit 0       # install succeeds
+    exit 0
+fi
+exit 0
+DOCKERMOCK
+    chmod +x "${MOCK_BIN}/docker"
+}
+
+teardown() { rm -rf "$TEST_TMPDIR"; }
+
+_make_wp_real_installer() {
+    local tmprepo="$1"
+    mkdir -p "${tmprepo}/core" "${tmprepo}/modules/host" \
+             "${tmprepo}/modules/stack" "${tmprepo}/modules/db" \
+             "${tmprepo}/modules/wp"
+
+    cp "${REPO_DIR}/wpgovern-install.sh"   "${tmprepo}/"
+    cp "${REPO_DIR}/core/bootstrap.sh"     "${tmprepo}/core/"
+    cp "${REPO_DIR}/core/state.sh"          "${tmprepo}/core/"
+    cp "${REPO_DIR}/core/credentials.sh"   "${tmprepo}/core/"
+
+    # No-op host modules
+    for mod in packages kernel swap firewall docker logrotate; do
+        cat > "${tmprepo}/modules/host/${mod}.sh" << MOCK
+#!/usr/bin/env bash
+set -euo pipefail
+wpgovern::host::${mod}::install()    { return 0; }
+wpgovern::host::${mod}::tune()       { return 0; }
+wpgovern::host::${mod}::create()     { return 0; }
+wpgovern::host::${mod}::configure()  { return 0; }
+MOCK
+    done
+
+    # No-op stack modules
+    cat > "${tmprepo}/modules/stack/credentials.sh" << 'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+wpgovern::stack::credentials::ensure() { return 0; }
+MOCK
+    for gen in images compose caddyfile mycnf; do
+        cat > "${tmprepo}/modules/stack/${gen}.sh" << MOCK
+#!/usr/bin/env bash
+set -euo pipefail
+wpgovern::stack::${gen}::pin()      { return 0; }
+wpgovern::stack::${gen}::generate() { return 0; }
+MOCK
+    done
+
+    # No-op db modules
+    cat > "${tmprepo}/modules/db/wait.sh" << 'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+wpgovern::db::wait_for_ready() { return 0; }
+MOCK
+    cat > "${tmprepo}/modules/db/credentials.sh" << 'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+wpgovern::db::credentials::ensure_backup_password() { return 0; }
+wpgovern::db::credentials::generate_age_key()       { return 0; }
+wpgovern::db::credentials::encrypt_state()          { return 0; }
+MOCK
+    cat > "${tmprepo}/modules/db/users.sh" << 'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+wpgovern::db::users::verify_application_user() { return 0; }
+wpgovern::db::users::create_backup_user()      { return 0; }
+MOCK
+
+    # REAL wp modules (not no-ops — per Lesson 1 + H.3.1.1)
+    cp "${REPO_DIR}/modules/wp/prepare.sh"   "${tmprepo}/modules/wp/"
+    cp "${REPO_DIR}/modules/wp/provision.sh" "${tmprepo}/modules/wp/"
+    cp "${REPO_DIR}/modules/wp/secure.sh"    "${tmprepo}/modules/wp/"
+}
+
+@test "H.4-11: wp phase runs from [host,stack,db] state; all 8 AUTH_KEYs persisted" {
+    local tmprepo="${TEST_TMPDIR}/installer_wp"
+    _make_wp_real_installer "$tmprepo"
+
+    # Pre-seed host+stack+db complete; wp blank
+    cat > "$STATE_FILE" << STATE
+{
+  "started_at": "2026-01-01T00:00:00Z",
+  "last_run_at": "2026-01-01T00:00:00Z",
+  "phases_complete": ["host", "stack", "db"],
+  "phases_failed": [],
+  "host_facts": {"bootstrap.env_file_path": "${ENV_FILE}"}
+}
+STATE
+
+    run bash -c "
+        export PATH='${MOCK_BIN}:/usr/bin:/bin'
+        bash '${tmprepo}/wpgovern-install.sh' --env-file '${ENV_FILE}'
+    "
+    [[ "$status" -eq 0 ]] || { echo "FAILED: $output"; return 1; }
+
+    # All 8 AUTH_KEYs must be in env file
+    local missing=0
+    for k in WPGOVERN_WP_AUTH_KEY WPGOVERN_WP_SECURE_AUTH_KEY WPGOVERN_WP_LOGGED_IN_KEY \
+              WPGOVERN_WP_NONCE_KEY WPGOVERN_WP_AUTH_SALT WPGOVERN_WP_SECURE_AUTH_SALT \
+              WPGOVERN_WP_LOGGED_IN_SALT WPGOVERN_WP_NONCE_SALT; do
+        grep -q "^${k}=" "$ENV_FILE" || { echo "Missing: $k"; missing=$((missing+1)); }
+    done
+    [[ "$missing" -eq 0 ]] || { echo "$missing AUTH_KEYs not persisted"; return 1; }
+
+    # wp phase must be marked complete
+    local phases
+    phases="$(jq -r '.phases_complete | sort | join(",")' "$STATE_FILE")"
+    [[ "$phases" =~ "wp" ]] || { echo "wp not in phases_complete: $phases"; return 1; }
+
+    # wp-config.php must exist with 640 perms
+    local config="${TEST_TMPDIR}/install/wp-config.php"
+    [[ -f "$config" ]] || { echo "wp-config.php not created"; return 1; }
+    local perms; perms="$(stat -c '%a' "$config")"
+    [[ "$perms" == "640" ]] || { echo "Expected 640, got $perms"; return 1; }
+
+    # Hash recorded in state
+    local hash; hash="$(jq -r '.host_facts["wp.secure.config_hash"]' "$STATE_FILE")"
+    [[ -n "$hash" && "$hash" != "null" ]] || { echo "wp.secure.config_hash not in state"; return 1; }
+}
+
+@test "H.4-11: idempotent re-run skips wp phase when already complete" {
+    local tmprepo="${TEST_TMPDIR}/installer_wp2"
+    _make_wp_real_installer "$tmprepo"
+
+    # Pre-seed all four phases complete
+    cat > "$STATE_FILE" << STATE
+{
+  "started_at": "2026-01-01T00:00:00Z",
+  "last_run_at": "2026-01-01T00:00:00Z",
+  "phases_complete": ["host", "stack", "db", "wp"],
+  "phases_failed": [],
+  "host_facts": {}
+}
+STATE
+
+    run bash "${tmprepo}/wpgovern-install.sh" --env-file "$ENV_FILE"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" =~ "already complete" ]]
+}
