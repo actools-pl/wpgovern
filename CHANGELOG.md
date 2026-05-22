@@ -5,14 +5,76 @@ Format: version / phase / date / summary / test count.
 
 ---
 
-## H.6.1 — H.6 Hardening Pass (May 2026)
+## H.7 — Backup, Governance-Aware Restore, and Deployment Close (May 2026)
+
+**358 bats tests · 776 Python unchanged · 42 bash files (+11 modules + systemd units)**
+
+**The final bash-arc phase. v1 ships after H.7 closes.**
+
+The system is now: governed AND operable AND recoverable.
+
+### Twelve new modules (`modules/backup/`)
+keygen (idempotent keypair), full_backup (streaming encryption), binlog_rotate (hourly, verified-before-deleted), restore_test (decrypt→test schema→drop), restore (five-phase governance-aware restore), status, install_shim, install_systemd, install_runbook, plus entry scripts and systemd units.
+
+### Three architectural decisions
+1. Stream encryption — `mariadb-dump | age` pipeline; no plaintext SQL on disk.
+2. Single restore script with internal phases; governance state restored BEFORE database.
+3. Operator attestation for key backup via `wpgovern-restore ack-key-backup`; WPG-DR-01 PASS is "acknowledged" not "verified."
+
+### Five new env vars
+WPGOVERN_DB_BACKUP_PASSWORD, WPGOVERN_AGE_PRIVATE_KEY_PATH, WPGOVERN_AGE_PUBLIC_KEY_PATH, WPGOVERN_BACKUP_DIR, WPGOVERN_RCLONE_REMOTE.
+
+### Install-audit integrations
+WPG-BKUP-001 activated (PASS/WARN/FAIL by backup age). WPG-BKUP-002 activated (restore-test age). WPG-DR-01 new (key backup acknowledgment).
+
+### Deployment-close gate
+`test_h7_final_security.bats` — 10 structural cross-arc security assertions. If it passes, the arc is shippable.
+
+### Operational runbook
+`RUNBOOK.md` installed at `${WPGOVERN_INSTALL_DIR}/RUNBOOK.md` (mode 0644). Quick reference, routine operations, disaster recovery for all three loss scenarios.
+
+### Methodology applied
+Lesson 2 fifth refinement (Lesson 2.5): test_h7_restore.bats invokes real shim (second operational round). Lesson 2 sixth refinement: xtrace guards on all credential-touching backup functions. Lesson 2 seventh refinement: no test mocks a function it names in its description.
+
+---
+
+
+
+**305 bats tests · 776 Python unchanged · zero bash-file additions**
+
+Five blockers + three supporting items. All at doctrine-vs-implementation boundary — code doing something different from what PHASE_H6_README promised.
+
+### H.6.2-1+6 — Login probe refactored to GET (closes both)
+POST mutated security plugin state. GET verifies login form present. `http_code` captured to variable → no JSON pollution. `grep -n '"-X POST"' modules/audit/behavioral.sh` = 0.
+
+### H.6.2-2+8 — format_json rebuilt on jq (closes both)
+awk `$6` dropped everything after first pipe in fix commands. Backslashes/newlines broke JSON. `jq -n --arg/--argjson` construction handles all escaping unconditionally.
+
+### H.6.2-3 — env-file discovery + load_env_readonly
+Hardcoded path → precedence chain: CLI flag → state-fact → convention. New `load_env_readonly` in core/bootstrap.sh (additive only): no mkdir, no strict validation, xtrace guard.
+
+### H.6.2-4 — Backup: remove -newer /proc/uptime
+`-mmin -2880` alone is correct and portable.
+
+### H.6.2-5 — Probe crash → exit code 2
+`_WPGOVERN_AUDIT_INTERNAL_ERROR` flag; `run_full` returns 2; `format_json` reports exit_code:2. Precedence: 2 > 1 > 0.
+
+### H.6.2-7 — server_header `|| true` (same cc_val class)
+Audit of all `$(... | grep ...)` patterns: only server header probe required guard.
+
+### Methodology notes
+Third bash-arc round where external review surfaced doctrine-vs-implementation gaps (H.4 = path/mount, H.5 = bash↔CLI boundary, H.6 = promised-vs-delivered behavior). Single observation of new candidate; hold for H.7.
+
+---
+
+
 
 **289 bats tests · 776 Python unchanged · zero bash-file additions**
 
-Two blockers surfaced from internal verification, each providing the second observation for a held methodology candidate.
+Two blockers surfaced from internal verification, each closing a known defect class.
 
 ### H.6.1-1 (High) — Xtrace guard in `_audit_probe_mariadb_reachable`
-H.4.1-2 defect class in sibling module. `WPGOVERN_DB_WP_PASSWORD` read without xtrace protection → 5 leak occurrences under bash -x. Fixed with `case "$-" in *x*)` guard pattern, identical to H.4.1-2's load_env protection. Credential audit: only this function in audit modules reads credentials. **Second data point for an internal methodology pattern around function-level xtrace protection.**
+H.4.1-2 defect class in sibling module. `WPGOVERN_DB_WP_PASSWORD` read without xtrace protection → 5 leak occurrences under bash -x. Fixed with `case "$-" in *x*)` guard pattern, identical to H.4.1-2's load_env protection. Credential audit: only this function in audit modules reads credentials. **Second data point for an internal pattern around function-level xtrace protection.**
 
 ### H.6.1-2 (Medium) — `test_h6_probes_layer1_5.bats` (6 tests)
 Phase-design-named file not shipped in H.6. Prior coverage in test_h6_orchestrator.bats was dispatcher-level (mock bypassed probe logic). New file: isolated probe-logic coverage sourcing behavioral.sh directly, mocking only docker/curl. Redis round-trip PASS+WARN, trusted-host PASS+FAIL branching, cache-headers FAIL, login WARN, fix-ID catalog cross-verification. **Second data point for an internal methodology pattern around test-name-vs-test-behavior alignment.** Also fixed `cc_val=$(grep)` under set -e in behavioral.sh.

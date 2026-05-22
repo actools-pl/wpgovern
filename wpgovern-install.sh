@@ -358,3 +358,29 @@ else
     wpgovern::state::mark_phase_complete "audit"
     wpgovern::bootstrap::log "[H.6] audit phase complete — wpgovern-install-audit installed"
 fi
+
+# ============================================================
+# Backup phase: keypair, shim, systemd, runbook (H.7)
+# ============================================================
+if wpgovern::state::phase_complete "backup"; then
+    wpgovern::bootstrap::log "Backup phase already complete — skipping"
+else
+    wpgovern::bootstrap::log "[H.7] starting backup phase"
+
+    # shellcheck source=modules/backup/keygen.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/backup/keygen.sh"
+    # shellcheck source=modules/backup/install_shim.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/backup/install_shim.sh"
+    # shellcheck source=modules/backup/install_systemd.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/backup/install_systemd.sh"
+    # shellcheck source=modules/backup/install_runbook.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/backup/install_runbook.sh"
+
+    wpgovern::backup::generate_keypair
+    wpgovern::backup::install_shim
+    wpgovern::backup::install_systemd
+    wpgovern::backup::install_runbook
+
+    wpgovern::state::mark_phase_complete "backup"
+    wpgovern::bootstrap::log "[H.7] backup phase complete — wpgovern-restore installed, timers active"
+fi

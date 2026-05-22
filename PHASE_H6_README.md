@@ -443,3 +443,49 @@ These tests silently skipped every run post-H.5.1 because they referenced the de
 **Bonus fix during test implementation:** `_audit_probe_http_cache_headers` had an unguarded `cc_val=$(... | grep ...)` where grep returning 1 (no match) could abort the function under `set -e`. Fixed with `|| true`.
 
 ### Test count after H.6.1: 289 (was 283; +6)
+
+---
+
+## H.6.2 hardening note
+
+**H.6 + H.6.1 architectural shape correct.** Five blockers from external review — all at the doctrine-vs-implementation boundary: code doing something different from what the README promised.
+
+### Five blockers closed
+
+**H.6.2-1 + H.6.2-6 — Login probe refactored to GET (closes both):**
+POST mutated: failed-login counters, security plugin lockout thresholds, server logs. Refactored to GET: verifies wp-login.php returns 200 with login form HTML — same diagnostic value, no state mutation. `--json` pollution closed: `http_code` now captured into a variable, never written to stdout.
+
+**H.6.2-2 + H.6.2-8 — `format_json` rebuilt on jq (closes both):**
+awk `$6` extraction dropped everything after the first pipe in fix commands (`du -sh /* | sort | head` became just `du -sh /*`). Backslashes, newlines, control chars broke JSON silently. Replaced with `jq -n --arg`/`--argjson` construction per finding. jq handles ALL escaping unconditionally.
+
+**H.6.2-3 — env-file discovery precedence + `load_env_readonly`:**
+Hardcoded `${WPGOVERN_INSTALLER_DIR}/wpgovern.env`. Now: CLI flag `--env-file` → state-fact `bootstrap.env_file_path` → convention → no-op. New `wpgovern::bootstrap::load_env_readonly` in `core/bootstrap.sh` (additive only): parses env vars without `mkdir`, without strict regex validation. Has xtrace guard.
+
+**H.6.2-4 — Backup currency: remove `-newer /proc/uptime`:**
+`-newer /proc/uptime` is kernel-behavior-dependent. A 1-hour-old backup failed the test on recently-rebooted systems. `-mmin -2880` alone is correct.
+
+**H.6.2-5 — Probe crash returns exit code 2:**
+`_WPGOVERN_AUDIT_INTERNAL_ERROR` flag initialized to 0 per run. Set to 1 in `_audit_run_probe` on non-zero return. `run_full` returns 2 when set (precedence: 2 > 1 > 0). `format_json` reports `exit_code: 2` in JSON output.
+
+### Three supporting items closed
+
+**H.6.2-7** — `|| true` on server header grep pipeline (same cc_val class from H.6.1). Audit: all `$(... | grep ...)` patterns in audit modules reviewed; only server header probe and cc_val (already fixed) required the guard.
+
+**H.6.2-8** — Subsumed by H.6.2-2 jq construction.
+
+### Env-file discovery for operators
+
+When `wpgovern-install-audit` starts, it resolves the env file via:
+1. `--env-file <path>` CLI flag (explicit override)
+2. State-fact `bootstrap.env_file_path` recorded at install time
+3. Convention: `${WPGOVERN_INSTALLER_DIR}/wpgovern.env`
+4. No-op: probes use default values
+
+### Read-only doctrine — now genuinely true
+
+After H.6.2-6 (login GET refactor), `wpgovern-install-audit` is genuinely read-only:
+- No HTTP POSTs
+- No filesystem mutations (`load_env_readonly` does not create dirs)
+- No probe side effects (each probe reads the running system; no writes)
+
+### Test count: 289 → 305 (+16 across 6 files + 1 new file)
