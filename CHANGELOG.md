@@ -5,7 +5,78 @@ Format: version / phase / date / summary / test count.
 
 ---
 
-## H.5 — WPGovern Python Control Plane Integration / Byte-One Ceremony (May 2026)
+## H.6.1 — H.6 Hardening Pass (May 2026)
+
+**289 bats tests · 776 Python unchanged · zero bash-file additions**
+
+Two blockers surfaced from internal verification, each providing the second observation for a held methodology candidate.
+
+### H.6.1-1 (High) — Xtrace guard in `_audit_probe_mariadb_reachable`
+H.4.1-2 defect class in sibling module. `WPGOVERN_DB_WP_PASSWORD` read without xtrace protection → 5 leak occurrences under bash -x. Fixed with `case "$-" in *x*)` guard pattern, identical to H.4.1-2's load_env protection. Credential audit: only this function in audit modules reads credentials. **Second data point for an internal methodology pattern around function-level xtrace protection.**
+
+### H.6.1-2 (Medium) — `test_h6_probes_layer1_5.bats` (6 tests)
+Phase-design-named file not shipped in H.6. Prior coverage in test_h6_orchestrator.bats was dispatcher-level (mock bypassed probe logic). New file: isolated probe-logic coverage sourcing behavioral.sh directly, mocking only docker/curl. Redis round-trip PASS+WARN, trusted-host PASS+FAIL branching, cache-headers FAIL, login WARN, fix-ID catalog cross-verification. **Second data point for an internal methodology pattern around test-name-vs-test-behavior alignment.** Also fixed `cc_val=$(grep)` under set -e in behavioral.sh.
+
+---
+
+
+
+**283 bats tests · 776 Python unchanged · 31 bash files (+8)**
+
+H.6 makes the system **operable**. Doctrine: boringly predictable, brutally honest, immediately useful.
+
+### `wpgovern-install-audit` — new command
+Pure bash. Separate from `wpgovern` (Python locked at v52.1). Three layers + layer 1.5. Read-only; no remediation; no skip lists; no config files.
+
+### Eight new bash modules (`modules/audit/`)
+probes.sh (L1), behavioral.sh (L1.5), infrastructure.sh (L2), security.sh (L3), formatters.sh, orchestrator.sh, install_shim.sh, entry.sh
+
+### Five fix-ID namespaces, four priority levels
+WPG-WP-*, WPG-STACK-*, WPG-SEC-*, WPG-CFG-*, WPG-BKUP-*. CRITICAL/HIGH/MEDIUM/LOW. Full catalog in PHASE_H6_README.
+
+### WPG-WP-007 — architectural delegation signal
+No WordPress security plugin → WARN (not FAIL). Communicates that content-layer security is operator-delegated per v1 design.
+
+### WPG-BKUP-001 — H.7 placeholder
+Emits WARN in H.6 ("backup module not yet deployed"). H.7 enforces the 48-hour SLO.
+
+### Lesson 2 fifth refinement first operational application
+`test_h6_integration.bats` invokes the real shim at test-local path (not function calls in isolation). Exercises entry.sh → orchestrator → real probes end-to-end.
+
+### Foundation check from H.5 closure
+Deleted `test_h5_install_python.bats` and `test_h5_real_integration.bats` (5 stale skip guards referencing deleted sdist). Superseded by `test_h5_production_path.bats`.
+
+---
+
+
+
+**259 bats tests · 776 Python unchanged · zero bash-file additions**
+
+Five blockers at the bash↔Python integration boundary. Python control plane verified correct by external review. Lesson 2 fifth refinement earned (integration-boundary verification).
+
+### H.5.1-1 (High) — Wheelhouse replaces sdist
+`pip install --no-index <sdist>` failed on fresh box. 9 `.whl` files replace the single `.tar.gz`. Offline PoC: fresh venv + no network → `wpgovern version 0.1.0`.
+
+### H.5.1-2 (High) — Array argv at all 9 ceremony call sites
+`$(...)` word-split `"byte-one bootstrap"` → dangling `bootstrap` positional rejected by Python CLI. Fixed: `_WPGOVERN_CEREMONY_ARGS=(--actor-id ... --reason ...)` + `"${_WPGOVERN_CEREMONY_ARGS[@]}"` at 9 sites.
+
+### H.5.1-3 (High) — CEREMONY_REASON whitespace exception in load_env
+Documentation said spaces allowed; parser rejected them. Exception extended from SITE_TITLE to CEREMONY_REASON. Metacharacter rejection still applies.
+
+### H.5.1-4 (Med-High) — Default-path consistency
+`/opt/wpgovern` (H.1 legacy) → `/opt/wpgovern-install` (H.5 canonical). Default now matches byte_one() hard requirement.
+
+### H.5.1-5 (Med-High) — Capture-then-test in step_9
+`if ! cmd; then $?=0` masked real exit code (52 on tamper). `cmd; local exit_code=$?` pattern records the actual code.
+
+### H.5.1-6 — Cat heredoc guarded in install_python.sh
+### H.5.1-7 — Test count reconciled: 259 total
+### H.5.1-8 — test_h5_production_path.bats: real byte_one.sh → real CLI
+### H.5.1-9 — State-fact trust limitation documented in PHASE_H5_README
+
+---
+
+
 
 **251 bats tests · 776 Python unchanged · 23 bash files (+2) · governance threshold crossed**
 
@@ -593,7 +664,7 @@ Security findings from independent production-readiness review (external review,
 - **α-3:** `validate_store` enforces cryptographic keypair match via shared `_verify_keypair_cryptographic_match` helper. Same contract as `I-T-4`.
 - **α-4:** Journaled commit failure now invokes in-process recovery synchronously.
 - **α-5:** `I-AUD-2` chain-tail invariant — fires when uncovered tail exceeds `MAX_TAIL_WINDOW`.
-- **α-6:** Reviewer-name leakage CI guard added. All remaining reviewer-name references removed from source.
+- **α-6:** Cleanup CI guard added. All remaining external-reference labels removed from source.
 
 ---
 
@@ -646,7 +717,7 @@ Security findings from independent production-readiness review (external review,
 - `activate_key`: JSON and active symlink staged in same `AtomicTransaction`.
 - `validate_store`: path-inside-tree enforcement.
 - `I-T-3`, `I-T-4`, `I-T-5` invariants added.
-- Reviewer-reference cleanup throughout codebase.
+- External-reference cleanup throughout codebase.
 
 ---
 

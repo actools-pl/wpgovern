@@ -179,3 +179,64 @@ sha256sum installer/vendor/wpgovern-0.1.0.tar.gz
 | Python | 776 | 776 |
 | Bash files | 21 | 23 |
 | File-hash governed | 4 | 4 |
+
+---
+
+## H.5.1 hardening note
+
+**H.5 Python control plane verified correct by external review.** Baseline creation, signature, tamper detection at exit_code=52 all confirmed empirically. Five blockers at the bash↔Python integration boundary closed.
+
+### Five blockers closed
+
+**H.5.1-1 (High) — Wheelhouse replaces sdist.** `pip install --no-index <sdist>` failed on fresh box due to unfulfilled build deps (setuptools≥68, typer≥0.12 and its transitive chain). Fixed by vendoring 9 `.whl` files; production install uses `--no-index --find-links installer/vendor/ wpgovern==0.1.0`. Offline PoC verified: fresh venv + no network access → `wpgovern version` = 0.1.0.
+
+**H.5.1-2 (High) — Array argv at all 9 ceremony call sites.** `_wpgovern_ceremony_actor_args` returned a string; `$(...)` word-split `"byte-one bootstrap"` into `byte-one` and `bootstrap` (dangling positional). Real CLI rejected: `Got unexpected extra argument (bootstrap)`. Fixed via `_WPGOVERN_CEREMONY_ARGS=(--actor-id ... --reason ...)` global array; callers expand `"${_WPGOVERN_CEREMONY_ARGS[@]}"`.
+
+**H.5.1-3 (High) — CEREMONY_REASON whitespace exception.** `load_env` rejected `WPGOVERN_CEREMONY_REASON="byte-one bootstrap"` (space in value). Exception extended from `WPGOVERN_WP_SITE_TITLE` to also cover `WPGOVERN_CEREMONY_REASON`. Metacharacter rejection still applies.
+
+**H.5.1-4 (Med-High) — Default-path consistency.** `bootstrap.sh:122` defaulted to `/opt/wpgovern` (H.1 legacy); `byte_one()` requires `/opt/wpgovern-install`. Now: `${WPGOVERN_INSTALL_DIR:-/opt/wpgovern-install}`. Audit: `/opt/wpgovern` (without `-install`) remains only in venv path (`/opt/wpgovern/.venv`) and shim exec path — correct.
+
+**H.5.1-5 (Med-High) — Capture-then-test in step_9.** `if ! cmd; then local ec=$?` evaluated the negated pipeline's status (always 0 in the then-branch), masking real exit code (52 on tamper). Fixed with: `cmd; local exit_code=$?; if [[ $exit_code -ne 0 ]]; then ... exit ${exit_code}`.
+
+### Four supporting items closed
+
+**H.5.1-6** — Cat heredoc in install_python.sh now guarded: `if ! cat > "$shim_tmp" << 'SHIM'; then rm -f "$shim_tmp"; mark_phase_failed; return 1; fi`. H.4.1-3 discipline travels to all four operations.
+
+**H.5.1-7** — Test count: 259 bats total. H.5.1-specific new tests: 2 (exit-code + array-argv regression in byte_one_steps) + 1 (wheelhouse offline in install_python) + 2 (production-path in test_h5_production_path) + 3 (bootstrap regressions for H.5.1-3+4). Prior README claimed 22; actual H.5-specific file tests: 20. With H.5.1 additions the total is correct at 259.
+
+**H.5.1-8** — `test_h5_production_path.bats` + `h5_integration_runner_cli_wrapper.py`: exercises `byte_one.sh` invoking real wpgovern CLI (not Python services directly). Whitespace reason passed; tamper detection records exit 52 in state.
+
+**H.5.1-9** — State-fact trust limitation documented below.
+
+---
+
+## Wheelhouse integrity (installer/vendor/)
+
+| Wheel | SHA-256 |
+|-------|---------|
+| `wpgovern-0.1.0-py3-none-any.whl` | `f9d209f92189083eeb3d141a5478715fb629d8939a1df9d1ecd4a122405eb4f9` |
+| `typer-0.25.1-py3-none-any.whl` | `75caa44ed46a03fb2dab8808753ffacdbfea88495e74c85a28c5eefcf5f39c89` |
+| `click-8.4.1-py3-none-any.whl` | `482be17c6991b8c19c5429a1e995d9b0efdbb63172824c41f99965dc0ade8ec2` |
+| `rich-15.0.0-py3-none-any.whl` | `33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb` |
+| `shellingham-1.5.4-py2.py3-none-any.whl` | `7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686` |
+| `pygments-2.20.0-py3-none-any.whl` | `81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176` |
+| `markdown_it_py-4.2.0-py3-none-any.whl` | `9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a` |
+| `mdurl-0.1.2-py3-none-any.whl` | `84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8` |
+| `annotated_doc-0.0.4-py3-none-any.whl` | `571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320` |
+
+Verify: `sha256sum installer/vendor/*.whl`
+
+## State-fact trust model (v1 limit, documented)
+
+The bash module trusts its own state facts for idempotency. If `ceremony.baseline_id` exists, step 5 skips — assuming a baseline JSON exists in `/opt/wpgovern/state/baselines/`.
+
+**Limitation:** if the baseline JSON is wiped while the installer state file is intact, step 5 skips but step 6 fails (baseline-submit cannot find the JSON).
+
+**Recovery:**
+```bash
+jq 'del(.host_facts | with_entries(select(.key | startswith("ceremony."))))' \
+    /var/lib/wpgovern/.state.json > /tmp/state-clean.json
+mv /tmp/state-clean.json /var/lib/wpgovern/.state.json
+```
+
+**Future hardening:** before skipping step 5, verify the baseline JSON exists on disk. Deferred for v1 single-operator deployments.

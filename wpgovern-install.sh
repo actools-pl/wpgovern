@@ -342,3 +342,19 @@ else
     wpgovern::state::mark_phase_complete "ceremony"
     wpgovern::bootstrap::log "[H.5] ceremony phase complete — system is governed"
 fi
+
+# ============================================================
+# Audit phase: install wpgovern-install-audit shim
+# ============================================================
+if wpgovern::state::phase_complete "audit"; then
+    wpgovern::bootstrap::log "Audit phase already complete — skipping"
+else
+    wpgovern::bootstrap::log "[H.6] starting audit phase"
+
+    # shellcheck source=modules/audit/install_shim.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/audit/install_shim.sh"
+    wpgovern::audit::install_shim
+
+    wpgovern::state::mark_phase_complete "audit"
+    wpgovern::bootstrap::log "[H.6] audit phase complete — wpgovern-install-audit installed"
+fi
