@@ -171,3 +171,27 @@ After fix: zero BW01 warnings across the full bats suite.
 | Python | 776 | 776 |
 | Bash files | 18 | 21 |
 | File-hash-governed artifacts | 3 | 4 |
+
+---
+
+## H.4.1 hardening note
+
+**H.4 implementation correct on core property.** wp-config.php determinism verified by external review (10/10 sha256 match). Five integration/hygiene blockers identified by third deployment of the layered review architecture.
+
+**Five blockers closed:**
+
+1. **H.4.1-1 (High) — wp-config.php not visible inside containers.** `secure.sh` writes to install-dir root; `compose.sh` only mounted `wordpress/`. Three coordinated `:ro` bind-mounts added to compose.sh (php, wordpress, cli). **Architectural decision:** keep wp-config.php at install-dir root (governance artifact directory), not inside `wordpress/` (application-writable volume). H.2 determinism property holds at new fixed point (10/10 after mount addition).
+
+2. **H.4.1-2 (High) — bash -x leaked credentials during load_env.** `core/credentials.sh` is sourced AFTER `load_env` runs — the H.3.1-2 xtrace helper was unavailable at that point. Inline xtrace guard added to `wpgovern::bootstrap::load_env` function entry. Pattern: functions that may be called before their dependencies are loaded must be self-protecting.
+
+3. **H.4.1-3 (High) — temp file left on chmod/chown/mv failure.** Four guarded blocks: each does `rm -f "$tmp_file"` → `mark_phase_failed` → `return 1` on failure. Discipline traveled from H.2's generators.
+
+4. **H.4.1-4 (Medium-High) — WP phase block duplicated.** Second verbatim copy deleted. `grep -c '[H.4] starting wp phase' wpgovern-install.sh` = 1.
+
+5. **H.4.1-5 (Medium-High) — Stale .old artifact.** `test_h4_entry_script_wp_phase.bats.old` deleted.
+
+**Two CI guards added (`test_ci_hygiene.bats`):**
+- No `*.old`/`*.bak`/`*~`/`*.orig` in installer_tests/
+- Each phase dispatch appears at most once in entry script
+
+**Test count:** 223 → 229 (+6: 3 CI guards + 3 regression tests).

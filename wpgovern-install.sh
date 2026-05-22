@@ -324,26 +324,21 @@ else
 fi
 
 # ============================================================
-# WP phase: prepare + provision + secure
+# Ceremony phase: Python install + byte-one ceremony
 # ============================================================
-if wpgovern::state::phase_complete "wp"; then
-    wpgovern::bootstrap::log "WP phase already complete — skipping"
+if wpgovern::state::phase_complete "ceremony"; then
+    wpgovern::bootstrap::log "Ceremony phase already complete — skipping"
 else
-    wpgovern::bootstrap::log "[H.4] starting wp phase"
+    wpgovern::bootstrap::log "[H.5] starting ceremony phase"
 
-    # shellcheck source=modules/wp/prepare.sh
-    source "${WPGOVERN_INSTALLER_DIR}/modules/wp/prepare.sh"
-    wpgovern::wp::prepare
+    # shellcheck source=modules/ceremony/install_python.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/ceremony/install_python.sh"
+    wpgovern::ceremony::install_python
 
-    # shellcheck source=modules/wp/provision.sh
-    source "${WPGOVERN_INSTALLER_DIR}/modules/wp/provision.sh"
-    wpgovern::wp::provision
+    # shellcheck source=modules/ceremony/byte_one.sh
+    source "${WPGOVERN_INSTALLER_DIR}/modules/ceremony/byte_one.sh"
+    wpgovern::ceremony::byte_one
 
-    # shellcheck source=modules/wp/secure.sh
-    source "${WPGOVERN_INSTALLER_DIR}/modules/wp/secure.sh"
-    wpgovern::wp::secure::ensure_auth_keys
-    wpgovern::wp::secure::generate_config
-
-    wpgovern::state::mark_phase_complete "wp"
-    wpgovern::bootstrap::log "[H.4] wp phase complete"
+    wpgovern::state::mark_phase_complete "ceremony"
+    wpgovern::bootstrap::log "[H.5] ceremony phase complete — system is governed"
 fi

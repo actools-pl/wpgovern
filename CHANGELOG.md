@@ -5,7 +5,61 @@ Format: version / phase / date / summary / test count.
 
 ---
 
-## H.4 — WordPress Provisioning Module (May 2026)
+## H.5 — WPGovern Python Control Plane Integration / Byte-One Ceremony (May 2026)
+
+**251 bats tests · 776 Python unchanged · 23 bash files (+2) · governance threshold crossed**
+
+H.5 is the bash arc's transition point. Connects the H.0–H.4 substrate to the Python
+control plane (v52.1, untouched). After H.5, the system is governed.
+
+### Two new ceremony modules
+- `modules/ceremony/install_python.sh` — venv + vendored sdist + shim (atomic placement)
+- `modules/ceremony/byte_one.sh` — nine-step ceremony; per-step state facts; per-step resumption
+
+### Vendored sdist
+`installer/vendor/wpgovern-0.1.0.tar.gz`
+SHA-256: `30b4583c0b7574e774b95eab184371f29366f38443a2f1f4f6b90e405e2f67a6`
+
+### Nine-step ceremony (mocked bats + real Python integration)
+Trust keys (runtime + journal) → baseline-create → submit → self-approve (bootstrap exception) → activate → governance-check exit 0.
+
+### Two new env vars (three coordinated sites)
+WPGOVERN_ACTOR_ID (default: installer) + WPGOVERN_CEREMONY_REASON (default: byte-one bootstrap).
+
+### Integration test (THE most important test in H.5)
+`test_h5_real_integration.bats` + `h5_integration_runner.py`: real ceremony against actual v52.1 control plane; tamper detection verified (exit 52 on config_file_hash_mismatch).
+
+### python3 + python3-venv added to packages.sh (H.1 dependency)
+
+---
+
+
+
+**229 bats tests · 776 Python unchanged · zero implementation additions**
+
+Five blockers closed. Core determinism property verified by external review and preserved.
+
+### H.4.1-1 (High) — THREE coordinated wp-config.php mounts in compose.sh
+php, wordpress, cli services now mount `wp-config.php:/var/www/html/wp-config.php:ro`.
+H.2 determinism holds at new fixed point (10/10). Architecture: governance file stays at install-dir root, not inside application volume.
+
+### H.4.1-2 (High) — Inline xtrace guard in bootstrap::load_env
+Credentials leak under bash -x during env parsing (before core/credentials.sh sourced).
+Inline guard at function entry, same discipline as H.3.1-2.
+
+### H.4.1-3 (High) — Four guarded blocks in secure::generate_config
+chmod/chown/target-dir-check/mv each do rm-f + mark_phase_failed + return 1.
+Secrets-don't-linger discipline traveled from H.2 generators.
+
+### H.4.1-4 (Med-High) — Duplicate WP phase block removed
+grep -c '[H.4] starting wp phase' = 1.
+
+### H.4.1-5 (Med-High) — Stale .old artifact deleted
+### H.4.1-6+7 — test_ci_hygiene.bats: stale-artifact + single-dispatch CI guards
+
+---
+
+
 
 **223 bats tests · 776 Python unchanged · 21 bash files (+3)**
 
