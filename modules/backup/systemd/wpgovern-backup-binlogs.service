@@ -1,0 +1,11 @@
+[Unit]
+Description=WPGovern hourly binlog rotation
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wpgovern-install/modules/backup/binlog_rotate_entry.sh
+User=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wpgovern-backup-binlogs
