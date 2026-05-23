@@ -1,0 +1,11 @@
+[Unit]
+Description=WPGovern daily full backup timer
+Requires=wpgovern-backup-full.service
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target
