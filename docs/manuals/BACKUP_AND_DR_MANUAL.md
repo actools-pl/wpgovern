@@ -1,214 +1,121 @@
-# WPGovern Backup and Disaster Recovery Manual
+# Backup and Disaster Recovery Manual
 
 ## Status
 
-Institutional backup and disaster recovery manual for a single-tenant, single-user WPGovern installation.
-
-This manual explains how WPGovern protects recoverability, what evidence it records, and what the operator must do to keep recovery possible.
-
----
+This manual is for operators, sysadmins, and emergency recovery personnel responsible for WPGovern v1.0.0. It explains the backup model, restore model, restore-test process, and operator-owned age private key responsibility.
 
 ## 1. Recovery doctrine
 
-WPGovern’s recovery model has three goals:
+WPGovern's recovery doctrine is:
 
-| Goal | Meaning |
+```text
+Recoverable means encrypted full backups, encrypted binlog rotation, restore-test evidence, and operator-attested key custody are all in place.
+```
+
+The doctrinal recovery goals are:
+
+| Claim | Meaning |
 |---|---|
-| RPO | How much recent data may be lost in a disaster. |
-| RTO | How long recovery should take after a prepared restore host exists. |
-| Evidence | Whether the operator can prove backups and restore-tests happened. |
+| RPO <= 1 hour | Hourly binlog rotation is intended to limit data loss between full backups. |
+| RTO <= 30 minutes | A prepared operator should be able to reinstall and restore a small WPGovern site within this target. |
+| Encrypted at rest | Backup artifacts are age-encrypted. Plaintext SQL should not be written to disk during normal full backup. |
+| Restore-test evidence | Backups are not considered proven until restore-test has passed. |
+| Key custody acknowledgement | The operator must acknowledge off-server custody of the age private key. |
 
-WPGovern is designed around this doctrine:
+These claims depend on correct operation and operator custody of the private key.
 
-```text
-Encrypted full backups + encrypted binlogs + restore-test + operator-attested key custody.
-```
+## 2. Full backup model
 
-The system is recoverable only if all parts remain true.
+The full backup captures two major artifacts:
 
----
+- WordPress database backup as an age-encrypted SQL stream,
+- governance state and configuration as an age-encrypted tar stream.
 
-## 2. Backup model
-
-WPGovern uses two backup layers.
-
-### Full backup
-
-A full backup captures:
-
-- WordPress database dump,
-- governance state,
-- installer state and configuration evidence,
-- required governed files, excluding the age private key.
-
-The SQL backup is streamed directly through age encryption. Plaintext SQL must not be written to disk.
-
-### Binlog rotation
-
-Binlogs support point-in-time recovery between full backups. The expected sequence is:
+The database backup uses a stream pipeline:
 
 ```text
-encrypt binlog -> verify encrypted output -> delete plaintext binlog
+mariadb-dump -> age -> full-<timestamp>.sql.age
 ```
 
-Plaintext binlogs must not be deleted before encrypted output is verified.
+Plaintext SQL should not be written to disk.
 
----
+The governance tarball intentionally excludes the age private key. The private key must never be stored inside the same encrypted backup set it is needed to decrypt.
 
-## 3. Encryption model
+## 3. Binlog rotation model
 
-WPGovern uses age encryption.
+Binlog rotation supports point-in-time recovery after a full backup.
 
-The public key is used to encrypt backups. The private key is required to decrypt them.
-
-Critical rule:
+The intended order is:
 
 ```text
-If the age private key is lost, encrypted backups are not recoverable.
+encrypt binlog -> verify encrypted file -> delete plaintext binlog
 ```
 
-The age private key must be backed up off-server by the operator.
+If encryption fails or produces an empty encrypted output, plaintext should be preserved rather than deleted.
 
-WPGovern can record that the operator acknowledged the key backup. WPGovern cannot independently verify that the off-server copy exists or is usable.
+Binlog rotation is intended to run hourly through systemd timers.
 
----
+## 4. Restore-test process
 
-## 4. Operator-owned key responsibility
-
-The operator must store the age private key somewhere outside the protected server.
-
-Acceptable examples:
-
-- encrypted password manager attachment,
-- secure institutional key vault,
-- offline encrypted storage,
-- sealed operational escrow with access controls.
-
-Unacceptable examples:
-
-- only copy on the WPGovern server,
-- only copy inside the encrypted backup directory,
-- only copy in a screenshot or chat transcript,
-- only copy in an unencrypted local file.
-
-After the key is backed up, record acknowledgement:
-
-```bash
-wpgovern-restore ack-key-backup --location-hint "off-server key vault"
-```
-
-The wording is intentionally “acknowledged,” not “verified.”
-
----
-
-## 5. Routine backup checks
-
-### List backups
-
-```bash
-wpgovern-restore list
-```
-
-Confirm that a recent full backup exists.
-
-### Run operational audit
-
-```bash
-wpgovern-install-audit --complete
-```
-
-Confirm backup-related fix-IDs are not failing.
-
-### Run restore-test
+The restore-test command is:
 
 ```bash
 wpgovern-restore restore-test
 ```
 
-Restore-test proves that the latest backup can be decrypted and loaded into a test schema.
+Restore-test is non-destructive to the production WordPress database. It should:
 
-A system with backups but no recent restore-test should not be treated as fully proven.
+1. find the most recent full backup,
+2. decrypt it using the age private key,
+3. load it into a temporary test schema,
+4. check expected WordPress tables,
+5. check that `wp_options` has rows,
+6. record PASS or FAIL state,
+7. drop the test schema.
 
----
+Weekly restore-test is recommended.
 
-## 6. Restore-test standard
+A recent backup without a recent successful restore-test should not be treated as fully proven.
 
-A successful restore-test should establish:
+## 5. age keypair responsibility
 
-- the age private key can decrypt the backup,
-- the SQL stream can load into a test schema,
-- expected WordPress tables are present,
-- `wp_options` contains rows,
-- the test schema is dropped after the test.
+WPGovern generates or manages an age keypair for backup encryption.
 
-If restore-test fails:
+The public key encrypts backups.
 
-1. Treat recoverability as degraded.
-2. Do not delete existing backups.
-3. Preserve logs.
-4. Run audit.
-5. Diagnose key, backup file, database, or schema failure.
-6. Re-run restore-test after correction.
+The private key decrypts backups.
 
----
+Critical rule:
 
-## 7. Disaster scenarios
+```text
+If the age private key is lost and no usable off-server copy exists, encrypted backups are not recoverable.
+```
 
-### Scenario A — Row mistake or content corruption
+The operator must store the private key off-server.
 
-Use point-in-time recovery if available.
+WPGovern records acknowledgement with:
 
-Procedure:
+```bash
+wpgovern-restore ack-key-backup --location-hint "off-server key location"
+```
 
-1. Stop normal editing activity.
-2. Identify approximate incident time.
-3. List available backups.
-4. Validate the intended restore point.
-5. Restore from full backup plus applicable binlogs.
-6. Run governance-check and install-audit.
-7. Record incident notes.
+WPGovern records this as:
 
-### Scenario B — Full database corruption
+```text
+WPG-DR-01: acknowledged (operator-attested)
+```
 
-Procedure:
+WPGovern cannot independently verify that the off-server key copy exists or is usable. See SECURITY_TRUST_MODEL.md Section 7 for the key custody boundary.
 
-1. Confirm age private key is present.
-2. Confirm target backup exists.
-3. Restore governance state before database.
-4. Restore SQL backup.
-5. Apply applicable binlogs.
-6. Run verification.
+## 6. Restore command syntax
 
-### Scenario C — Server loss
-
-Procedure:
-
-1. Provision replacement server.
-2. Reinstall WPGovern to the required phase baseline.
-3. Restore age private key from off-server storage.
-4. Copy encrypted backups to the expected backup directory.
-5. Run restore.
-6. Run audit and governance-check.
-
-### Scenario D — age private key loss
-
-If no off-server copy exists, encrypted backups are not recoverable.
-
-WPGovern cannot bypass age encryption. This is intentional.
-
----
-
-## 8. Restore command model
-
-The restore command is destructive.
-
-Use:
+The restore command is:
 
 ```bash
 wpgovern-restore <backup_ts>
 ```
 
-The timestamp format is:
+The backup timestamp format is:
 
 ```text
 YYYYMMDDTHHMMSSZ
@@ -217,62 +124,76 @@ YYYYMMDDTHHMMSSZ
 Example:
 
 ```bash
-wpgovern-restore 20260523T000000Z
+wpgovern-restore 20260524T030000Z
 ```
 
-The restore process should follow this order:
+Other supported subcommands are:
 
-```text
-validate -> install-check -> governance state -> database -> verify
+```bash
+wpgovern-restore restore-test
+wpgovern-restore list
+wpgovern-restore ack-key-backup --location-hint "off-server key location"
+wpgovern-restore --help
+wpgovern-restore --version
 ```
 
-Governance state must be restored before database so that audit and governance evidence remain coherent.
+There is no `wpgovern-restore --dry-run` command in v1.0.0.
 
----
+## 7. Restore phase sequence
 
-## 9. Restore exit codes
+A full restore runs five phases:
 
-| Exit code | Meaning |
+| Phase | Purpose |
 |---|---|
-| 0 | Restore complete and verification passed. |
-| 10 | Validate phase failed. Backup files, key, decryptability, or database readiness may be broken. |
-| 11 | Install check failed. The target box is not ready for restore. |
+| validate | Confirm backup files, age key, decryptability, and MariaDB readiness. |
+| install-check | Confirm required WPGovern install phases completed on the target box. |
+| governance state | Restore governance state before the database. |
+| database | Restore SQL backup and apply applicable binlogs. |
+| verify | Run post-restore verification through governance and audit checks. |
+
+The order matters. Governance state is restored before database so the restored system retains coherent governance context.
+
+## 8. Restore exit codes
+
+Full restore exit codes are:
+
+| Code | Meaning |
+|---|---|
+| 0 | Restore complete and checks passed. |
+| 10 | Validate phase failed. |
+| 11 | Install check failed. |
 | 12 | Governance state restore failed. |
 | 13 | Database restore failed. |
 | 14 | Post-restore verification failed. |
 
-Operators should preserve the exact exit code in incident notes.
+Preserve the exact exit code in incident notes.
 
----
+## 9. Pre-restore checklist
 
-## 10. Pre-restore checklist
-
-Before running a destructive restore, confirm:
+Before a destructive restore, confirm:
 
 ```text
 [ ] Correct backup timestamp selected.
-[ ] age private key exists and has correct permissions.
-[ ] Encrypted SQL backup exists.
-[ ] Encrypted governance backup exists.
-[ ] Target system has completed required install phases.
-[ ] Current incident reason is recorded.
-[ ] Operator understands current data will be overwritten.
-[ ] Recent audit/backup evidence has been saved if needed.
+[ ] Current data loss implications are understood.
+[ ] age private key exists and has the expected permissions.
+[ ] SQL backup file exists.
+[ ] Governance backup file exists.
+[ ] Target server completed required WPGovern install phases.
+[ ] Current audit evidence has been saved if needed.
+[ ] Operator has authority to overwrite the current database and governance state.
 ```
 
-A future Local Console restore wizard must require explicit typed confirmation before running destructive restore.
+Do not run restore casually. Restore overwrites current state.
 
----
+## 10. Post-restore verification
 
-## 11. Post-restore checklist
-
-After restore:
+After restore, run:
 
 ```bash
 wpgovern-install-audit --complete
 ```
 
-Also run the governance check if available:
+Also run the governance check if available in the environment:
 
 ```bash
 wpgovern governance-check
@@ -281,51 +202,65 @@ wpgovern governance-check
 Confirm:
 
 ```text
-[ ] WordPress site loads.
-[ ] Admin login works.
+[ ] WordPress loads.
 [ ] Expected content exists.
 [ ] Audit has no unexpected FAIL findings.
-[ ] Governance check result is recorded.
-[ ] Incident notes include command, timestamp, exit code, and result.
+[ ] Governance check result is acceptable.
+[ ] Restore command, timestamp, exit code, and findings are recorded.
 ```
 
----
+See AUDIT_MANUAL.md Section 6 for audit exit-code semantics.
 
-## 12. Evidence for institutional use
+## 11. Disaster scenario: data corruption
 
-For institutional reporting, preserve:
+For mistaken content edits or database corruption:
 
-- latest full backup timestamp,
-- latest binlog rotation timestamp,
-- latest restore-test result,
-- WPG-DR-01 acknowledgement,
-- audit output,
-- governance-check result,
-- operator incident notes.
+1. Stop normal editing activity.
+2. Identify the approximate incident time.
+3. List available backups.
+4. Select the safest restore timestamp.
+5. Confirm age private key availability.
+6. Run restore.
+7. Run post-restore verification.
+8. Preserve incident notes.
 
-A future DR Attestation Report should compile these into a human-readable evidence document.
+## 12. Disaster scenario: full server loss
 
-Required wording:
+For server loss:
+
+1. Provision a replacement Ubuntu 24.04 LTS server.
+2. Restore or recreate required DNS pointing.
+3. Install WPGovern to the required phase baseline.
+4. Restore the age private key from off-server custody.
+5. Copy encrypted backups to the expected backup directory.
+6. Run `wpgovern-restore <backup_ts>`.
+7. Run audit and governance checks.
+
+The RTO claim assumes a prepared operator, available backups, available key material, and a small-to-moderate site size.
+
+## 13. Disaster scenario: age key loss
+
+If the age private key is lost and no usable off-server copy exists, encrypted backups cannot be decrypted.
+
+WPGovern cannot bypass age encryption.
+
+This is intentional. The system makes key responsibility explicit through WPG-DR-01. It does not remove that responsibility.
+
+## 14. Recovery readiness standard
+
+Treat the system as recovery-ready only when:
 
 ```text
-WPGovern verifies local encrypted backup and restore-test evidence.
-WPGovern records operator acknowledgement of off-server key backup.
-WPGovern does not independently verify off-server key custody.
+[ ] Full backup is current.
+[ ] Binlog rotation is current.
+[ ] Restore-test has passed within the required window.
+[ ] WPG-DR-01 is acknowledged (operator-attested).
+[ ] No backup-related audit FAIL findings exist.
+[ ] The operator knows where the off-server age private key copy is stored.
 ```
 
----
+See AUDIT_MANUAL.md Section 12 for backup and DR audit findings.
 
-## 13. Recovery readiness standard
+## 15. Closure / Summary
 
-WPGovern should be considered recovery-ready only when:
-
-```text
-Recent full backup exists.
-Binlog rotation is current.
-Restore-test has passed recently.
-age private key backup is acknowledged.
-No backup-related audit FAIL findings exist.
-The operator knows where the private key is stored.
-```
-
-If any item is false, treat recovery readiness as degraded.
+WPGovern v1.0.0 makes recoverability observable through encrypted backups, binlog rotation, restore-test evidence, and operator-attested key custody. Recovery is only as strong as the complete chain: backup files, private key custody, restore procedure, and operator discipline.
