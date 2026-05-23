@@ -1,0 +1,10 @@
+[Unit]
+Description=WPGovern hourly binlog rotation timer
+Requires=wpgovern-backup-binlogs.service
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
