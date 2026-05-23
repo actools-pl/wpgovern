@@ -1,135 +1,123 @@
-# WPGovern Operator Manual
+# Operator Manual
 
 ## Status
 
-Institutional operations manual for a single-tenant, single-user WPGovern installation.
-
-This manual is written for the person responsible for running an installed WPGovern system. It assumes the system has already been installed and that the operator has shell access to the server.
-
-WPGovern is not a fleet SaaS. It is a governed single-site WordPress appliance. The operator’s job is to keep the one protected installation governed, operable, recoverable, and evidence-backed.
-
----
+This manual is for the daily operator of a WPGovern v1.0.0 installation. It explains how to monitor the system, read operational evidence, respond to warnings and failures, and preserve the single-tenant governance model.
 
 ## 1. Operating principle
 
 WPGovern is operated through explicit commands and recorded evidence.
 
-The operator should think in four states:
+The command line is the authority in v1.0.0. There is no Local Console and no `wpgovern-status --json` command in v1.0.0. Machine-readable status output is planned for a future release.
 
-| State | Meaning |
-|---|---|
-| Governed | The baseline, signatures, and governance checks agree with the expected system state. |
-| Operable | The live stack, audit probes, WordPress layer, and infrastructure health are acceptable. |
-| Recoverable | Backups, binlogs, restore-test, and DR key acknowledgement are current. |
-| Evidence-backed | The system can show when checks, backups, restore-tests, and acknowledgements occurred. |
-
-The command line remains the authority. Any future local console must explain and present this evidence; it must not invent a second source of truth.
-
----
-
-## 2. Operator responsibilities
-
-The operator is responsible for:
-
-- running periodic checks,
-- reading WARN and FAIL results,
-- keeping the age private key backed up off-server,
-- confirming backups are recent,
-- running restore-tests,
-- preserving logs and state evidence,
-- avoiding manual edits to governed files unless a repair procedure explicitly allows it.
-
-The operator is not expected to inspect raw Bash logs every day. The normal operating pattern is to run the audit/status commands and act on the resulting PASS, WARN, or FAIL signals.
-
----
-
-## 3. Routine operating cadence
-
-### Daily
-
-Run the operational audit:
+Daily operation should use:
 
 ```bash
 wpgovern-install-audit --complete
 ```
 
-Expected result:
+and backup/restore commands through:
 
-```text
-No FAIL findings.
-WARN findings are allowed only when understood and intentionally deferred.
+```bash
+wpgovern-restore
 ```
 
-Check recent backup state:
+## 2. Four operational states
+
+The operator should think in four states:
+
+| State | Meaning |
+|---|---|
+| Governed | Governance baseline and checks remain acceptable. |
+| Operable | The stack, WordPress layer, audit probes, and runtime health are acceptable. |
+| Recoverable | Backups, binlogs, restore-test, and key acknowledgement are current. |
+| Evidence-backed | Important checks and actions have recorded evidence. |
+
+A WPGovern system is not merely installed. It must remain governed, operable, recoverable, and evidence-backed.
+
+## 3. Daily routine
+
+Run:
+
+```bash
+wpgovern-install-audit --complete
+```
+
+Expected daily condition:
+
+```text
+No unexpected FAIL findings.
+WARN findings are reviewed and understood.
+```
+
+Also check available backups:
 
 ```bash
 wpgovern-restore list
 ```
 
-Confirm that at least one recent full backup exists and that binlog rotation is not stale.
+If the audit reports backup or restore-test findings, read BACKUP_AND_DR_MANUAL.md Section 14.
 
-### Weekly
+## 4. Weekly routine
 
-Run a restore-test:
+Run restore-test:
 
 ```bash
 wpgovern-restore restore-test
 ```
 
-Expected result:
+Expected condition:
 
 ```text
-Restore-test PASSED
+Restore-test passes.
 ```
 
-If restore-test fails, treat the system as not fully recoverable until the failure is corrected.
+If restore-test fails, treat the system as not fully recoverable until corrected.
 
-### Monthly
+## 5. Monthly routine
 
-Review the DR key acknowledgement:
+Review disaster-recovery key acknowledgement:
 
 ```bash
 wpgovern-install-audit --complete
 ```
 
-Confirm that WPG-DR-01 is PASS. The wording is important: WPGovern records that the key backup was acknowledged by the operator. It does not independently verify off-server key custody.
+Confirm that `WPG-DR-01` is PASS and that the operator still knows where the off-server age private key copy is stored.
 
-### After any major change
+`WPG-DR-01` is acknowledged or operator-attested. It is not independently verified by WPGovern.
 
-After changing DNS, WordPress configuration, backup storage, credentials, firewall rules, or restore procedures, run:
+## 6. After major changes
+
+After DNS, credentials, WordPress configuration, backup location, systemd timer, firewall, Docker, or restore procedure changes, run:
 
 ```bash
 wpgovern-install-audit --complete
 wpgovern-restore restore-test
 ```
 
----
+Preserve output if the change matters for institutional evidence.
 
-## 4. Reading audit results
+## 7. Reading PASS, WARN, and FAIL
 
-WPGovern audit results use three operational states:
+Use AUDIT_MANUAL.md Section 5 as the authority for audit semantics.
 
-| Result | Operator meaning |
+Short form:
+
+| Status | Meaning |
 |---|---|
-| PASS | The check is currently acceptable. |
-| WARN | The system is still usable, but action is recommended. |
-| FAIL | A required condition is broken. Treat as an operational incident. |
+| PASS | Condition is acceptable. |
+| WARN | Operator attention is required or recommended. |
+| FAIL | Required condition is broken. |
 
-A WARN is not decorative. It means the operator should either fix the condition or consciously defer it and record why.
+Do not ignore FAIL findings. Do not dismiss WARN findings without understanding them.
 
-A FAIL should not be ignored before a production claim, restore operation, client evidence report, or handover.
+## 8. Core commands
 
----
-
-## 5. Core commands
-
-### Full audit
+### Complete audit
 
 ```bash
 wpgovern-install-audit --complete
 ```
-
-Use this for routine operator checks.
 
 ### Security-focused audit
 
@@ -137,15 +125,11 @@ Use this for routine operator checks.
 wpgovern-install-audit --security
 ```
 
-Use this when reviewing security posture.
-
-### Machine-readable audit
+### Machine-readable audit JSON
 
 ```bash
 wpgovern-install-audit --json
 ```
-
-Use this for a future local console or evidence export.
 
 ### List backups
 
@@ -153,117 +137,118 @@ Use this for a future local console or evidence export.
 wpgovern-restore list
 ```
 
-Use this before restore planning.
-
 ### Run restore-test
 
 ```bash
 wpgovern-restore restore-test
 ```
 
-Use this weekly and after backup-related changes.
-
-### Acknowledge age key backup
+### Acknowledge off-server age private key backup
 
 ```bash
-wpgovern-restore ack-key-backup --location-hint "off-server location description"
+wpgovern-restore ack-key-backup --location-hint "off-server key location"
 ```
 
-Use this only after the operator has actually backed up the age private key off-server.
+### Full restore
 
----
+```bash
+wpgovern-restore <backup_ts>
+```
 
-## 6. Evidence discipline
+Example:
 
-Evidence matters because WPGovern is a governance system, not just an installer.
+```bash
+wpgovern-restore 20260524T030000Z
+```
 
-Preserve:
+Full restore is destructive. Read BACKUP_AND_DR_MANUAL.md Section 9 before running it.
 
-- audit results,
-- restore-test results,
-- backup timestamps,
-- age key acknowledgement timestamp,
-- governance-check results,
-- relevant state-file facts,
-- incident notes.
+## 9. Incident handling: audit shows FAIL
 
-For future UX work, these should feed a DR Attestation Report. The report should explain what WPGovern verified and what the operator attested.
+If audit shows FAIL:
 
----
+1. Save the audit output.
+2. Identify the fix-ID and message.
+3. Read the suggested fix command if present.
+4. Apply the correction carefully.
+5. Re-run the same audit command.
+6. Preserve before/after evidence if the incident matters.
 
-## 7. What not to do
+If the FAIL relates to backups, restore-test, or key acknowledgement, also read BACKUP_AND_DR_MANUAL.md Section 14.
 
-Do not manually delete backup files because they look old unless a retention policy says so.
+## 10. Incident handling: backup is stale
 
-Do not edit governed configuration files without understanding that the next governance check may fail.
+If `WPG-BKUP-001` reports WARN or FAIL:
 
-Do not run destructive restore commands casually.
-
-Do not store the only copy of the age private key on the same server as the encrypted backups.
-
-Do not treat WPG-DR-01 PASS as off-server verification. It is an operator acknowledgement.
-
-Do not expose any future local console publicly without authentication and a clear threat model.
-
----
-
-## 8. Incident handling
-
-### If audit shows FAIL
-
-1. Record the exact command and output.
-2. Identify the fix-ID.
-3. Read the relevant manual section or runbook entry.
-4. Fix the cause.
-5. Re-run the audit.
-6. Keep the before/after evidence.
-
-### If backup is stale
-
-1. Run a manual full backup if available.
-2. Confirm the backup appears in `wpgovern-restore list`.
-3. Run restore-test.
+1. Check backup timers and service status.
+2. Confirm backup directory exists.
+3. Trigger or repair the full backup path as indicated by the audit finding.
 4. Re-run audit.
+5. Run restore-test after backup health is restored.
 
-### If restore-test fails
+Do not delete existing encrypted backups during diagnosis unless a retention procedure explicitly requires it.
 
-Treat recoverability as degraded.
+## 11. Incident handling: restore-test fails
 
-Do not claim disaster recovery readiness until restore-test passes again.
+If restore-test fails:
 
-### If age private key is missing
+1. Treat recoverability as degraded.
+2. Preserve the command output.
+3. Confirm age private key is present.
+4. Confirm recent encrypted backup exists.
+5. Confirm MariaDB is available.
+6. Re-run after correcting the cause.
 
-Encrypted backups cannot be restored without the private key. Recoverability depends on an off-server copy. If no copy exists, WPGovern cannot recover the encrypted backups.
+Do not claim disaster-recovery readiness until restore-test passes again.
 
----
+## 12. What not to touch manually
 
-## 9. Operator handover checklist
+Do not manually edit or delete these unless following a documented repair procedure:
 
-Before transferring responsibility to another operator, provide:
+- installer state file,
+- governance state,
+- generated Docker Compose files,
+- generated WordPress configuration,
+- age private key,
+- encrypted backup files,
+- systemd backup units,
+- backup metadata facts.
 
-- server access procedure,
-- DNS and domain information,
-- location of WPGovern install directory,
-- location of encrypted backups,
-- location of off-server age private key backup,
-- latest audit output,
-- latest restore-test output,
-- known WARN findings,
-- incident history,
-- this manual and the Backup & DR Manual.
+Manual edits can make audit and governance evidence inconsistent.
 
----
+## 13. Operator handover checklist
 
-## 10. Closure rule for routine operation
-
-The system is in acceptable daily operating condition when:
+Before handing WPGovern to another operator, provide:
 
 ```text
-wpgovern-install-audit --complete has no FAIL findings.
-Backups are recent.
-Restore-test is within the required window.
-WPG-DR-01 is acknowledged.
-No unresolved restore or governance incident is open.
+[ ] Server access procedure.
+[ ] DNS and domain details.
+[ ] WPGovern install directory.
+[ ] Path to wpgovern.env.
+[ ] Backup directory.
+[ ] Off-server age private key custody location.
+[ ] Latest wpgovern-install-audit --complete output.
+[ ] Latest wpgovern-restore restore-test result.
+[ ] Known WARN findings and reasons.
+[ ] Recent incidents and resolutions.
+[ ] SECURITY_TRUST_MODEL.md and BACKUP_AND_DR_MANUAL.md.
 ```
 
-If any of these are false, the operator should treat the system as needing attention.
+Do not hand over a system without explaining the private key custody boundary.
+
+## 14. What WPGovern does not do for the operator
+
+WPGovern does not:
+
+- protect against a compromised root operator,
+- verify off-server key custody,
+- replace WordPress security plugins,
+- eliminate the need for DNS and server administration,
+- make restore safe without operator judgement,
+- operate as a SaaS fleet dashboard.
+
+See SECURITY_TRUST_MODEL.md Section 10 for known limitations.
+
+## 15. Closure / Summary
+
+Daily WPGovern operation is disciplined, not complicated: run audit, watch backup and restore-test evidence, keep age private key custody clear, and preserve evidence when something changes. The system is trustworthy only when the operator keeps its governed, operable, recoverable, and evidence-backed states current.
