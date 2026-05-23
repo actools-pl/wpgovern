@@ -1,248 +1,166 @@
-# WPGovern Security and Trust Model Manual
+# Security and Trust Model Manual
 
 ## Status
 
-Institutional security and trust model manual for a single-tenant, single-user WPGovern installation.
+This manual is for auditors, sysadmins, and technical evaluators reviewing WPGovern v1.0.0. It describes what WPGovern protects, what it assumes, and what remains the operator's responsibility.
 
-This document explains what WPGovern is designed to protect, what assumptions it makes, and what remains the operator's responsibility.
+## 1. Trust model
 
----
+WPGovern v1.0.0 is a single-tenant, single-user, single-node governance system for one WordPress installation.
 
-## 1. Security posture in one sentence
+It assumes:
 
-WPGovern is a single-node governance appliance for one WordPress installation. It hardens installation, records governance evidence, audits operational posture, and supports encrypted recovery; it does not remove the need for operator key custody, server access control, or careful incident response.
+- one protected WordPress site,
+- one server under the operator's control,
+- trusted root access for the operator,
+- no hostile co-tenants on the WPGovern instance,
+- no fleet or SaaS control plane,
+- operator custody of off-server recovery material.
 
----
+WPGovern does not defend against a compromised root operator. Root can change files, read process memory, stop services, delete backups, or bypass controls. WPGovern records, governs, audits, and supports recovery; it does not make root untrusted.
 
-## 2. Trust model
+## 2. Governance boundary
 
-WPGovern assumes:
+WPGovern's load-bearing doctrines are:
 
-- one protected WordPress installation,
-- one administrative operator or tightly controlled operator group,
-- root-level server access is trusted,
-- the host is a dedicated single-tenant environment,
-- the operator controls DNS and server provisioning,
-- the operator is responsible for off-server key backup.
+| Doctrine | Meaning |
+|---|---|
+| Governed | Critical configuration and baseline state are created deterministically and checked by the governance control plane. |
+| Operable | The live installation can be audited with repeatable PASS, WARN, and FAIL findings. |
+| Recoverable | Encrypted backups, binlog rotation, restore-test evidence, and key-custody acknowledgement support disaster recovery. |
 
-WPGovern does not assume:
+Each doctrine has limits. WPGovern makes important evidence visible; it does not remove operator responsibility.
 
-- hostile tenants on the same WPGovern instance,
-- a SaaS control plane,
-- central fleet management,
-- untrusted operators with shell access,
-- automatic recovery if the age private key is lost.
+## 3. Root privilege boundary
 
----
+The installer and operational scripts perform privileged system work. They configure host packages, Docker, firewall rules, systemd units, filesystem permissions, governance state, and backup paths.
 
-## 3. Boundary map
+The root operator is trusted.
 
-| Boundary | WPGovern role | Operator responsibility |
-|---|---|---|
-| Host operating system | installs and checks expected host foundation | keep server access secure |
-| Docker stack | generates and governs deterministic stack files | avoid manual drift unless planned |
-| WordPress files | governs critical configuration and provisioning | manage content-layer policy/plugins |
-| Database | creates users, backup user, and backup paths | protect database credentials |
-| Backups | stream-encrypted backup and restore-test | preserve backup files and private key |
-| Governance state | records phase facts, audit facts, backup facts | avoid tampering with state files |
-| Off-server key custody | records acknowledgement | actually store the private key safely |
+WPGovern protects against unmanaged drift and missing evidence. It does not protect against a malicious or careless root operator who intentionally deletes files, changes keys, edits state, or disables services.
 
----
+## 4. Docker boundary
 
-## 4. What WPGovern protects
+WPGovern v1 uses a four-service Docker stack:
 
-WPGovern protects against:
+```text
+caddy
+mariadb
+php
+wordpress
+```
 
-- unmanaged installation drift,
-- missing operational audit evidence,
+The stack is generated and governed by installer modules. Docker isolation is treated as an operational boundary, not a complete security sandbox against root or daemon compromise.
+
+The operator remains responsible for host-level Docker access. Anyone with Docker daemon control can usually escalate to host-level control.
+
+## 5. Filesystem and credential handling
+
+WPGovern uses filesystem ownership, modes, and deterministic generated files to reduce accidental drift.
+
+Sensitive files include:
+
+- `wpgovern.env`,
+- generated WordPress configuration,
+- database credentials,
+- WordPress admin credentials,
+- WordPress salts and keys,
+- age private key,
+- installer state,
+- encrypted backups.
+
+Credential-sensitive functions should disable Bash xtrace before handling secrets. WPGovern includes xtrace guards in credential-touching flows, including audit database reachability and backup/restore paths. This protects against accidental `bash -x` disclosure; it is not a substitute for protecting the server and logs.
+
+## 6. Encryption-at-rest model
+
+Backups are encrypted with age.
+
+The SQL backup model is stream-oriented:
+
+```text
+mariadb-dump -> age-encrypted .sql.age file
+```
+
+Plaintext SQL should not be written to disk during normal full backup operation.
+
+Governance state is also backed up through an encrypted tar stream. The age private key is excluded from the governance tarball. Including it would defeat the encryption-at-rest model.
+
+## 7. Off-server key custody
+
+The age public key can encrypt backups. The age private key is required to decrypt them.
+
+If the age private key is lost and no usable off-server copy exists, encrypted backups are not recoverable.
+
+WPGovern can record that the operator acknowledged off-server key backup:
+
+```text
+WPG-DR-01: acknowledged (operator-attested)
+```
+
+WPGovern cannot prove that the off-server private key exists, is retrievable, or is usable. Manuals, audit output, and reports must use “acknowledged” or “operator-attested,” never “verified,” for off-server key custody.
+
+## 8. What WPGovern protects
+
+WPGovern helps protect against:
+
+- undocumented installer state,
+- unmanaged configuration drift,
+- missing audit evidence,
 - stale backup visibility,
 - missing restore-test evidence,
 - accidental plaintext SQL backup files,
 - silent backup timer setup failure,
-- configuration mismatch between declared governance and runtime state,
-- unacknowledged DR key custody responsibility.
+- unacknowledged disaster-recovery key responsibility.
 
-WPGovern improves the system by making important conditions visible and testable.
+It does this through deterministic generation, state facts, audit probes, encrypted backups, restore-test evidence, and explicit operator acknowledgement.
 
----
+## 9. What remains operator responsibility
 
-## 5. What WPGovern does not protect
+The operator remains responsible for:
 
-WPGovern does not protect against:
+- server access control,
+- SSH key custody,
+- DNS correctness,
+- off-server age private key backup,
+- off-server backup policy if required,
+- WordPress content-layer security choices,
+- plugin and theme risk decisions,
+- incident response,
+- safe handling of restore operations,
+- preserving evidence when needed.
 
-- a lost age private key with no off-server backup,
-- a fully compromised root operator,
-- malicious physical access to the server,
-- vulnerabilities in WordPress plugins or themes unless separately governed,
-- all possible supply-chain attacks,
-- careless public exposure of a future local console,
-- unsupported manual edits that bypass governance workflow.
+WPGovern can warn about some of these conditions. It cannot fully automate judgement or institutional accountability.
 
-These are not failures of WPGovern; they are boundaries of the model.
+## 10. Known limitations
 
----
+WPGovern v1.0.0 is not:
 
-## 6. Credential handling
+- a multi-tenant platform,
+- a fleet manager,
+- a SaaS control plane,
+- a Web Application Firewall,
+- a malware scanner,
+- a replacement for WordPress security plugins,
+- a substitute for off-server key custody,
+- a guarantee against supply-chain compromise,
+- a defense against compromised root.
 
-Credentials must not appear in routine stdout, stderr, or logs.
+The audit includes an architectural delegation signal for WordPress security plugin presence. That signal does not mean WPGovern itself performs all content-layer protection.
 
-Credential-sensitive functions should disable xtrace before reading or using secrets. This protects against accidental `bash -x` leakage.
+## 11. Security review checklist
 
-Sensitive values include:
-
-- database root password,
-- WordPress database password,
-- backup database password,
-- WordPress admin password,
-- AUTH_KEY and SALT values,
-- age private key contents.
-
-The age private key should be handled as one of the most important secrets in the system.
-
----
-
-## 7. Encryption-at-rest model
-
-Backups are encrypted with age.
-
-The intended backup discipline is:
+Before making a security or recovery claim, confirm:
 
 ```text
-plaintext SQL exists only in process pipes, not as a disk file.
+[ ] wpgovern-install-audit --complete has no unexpected FAIL findings.
+[ ] Backup currency is acceptable.
+[ ] Restore-test has passed within the required window.
+[ ] WPG-DR-01 is acknowledged (operator-attested).
+[ ] The operator knows where the off-server age private key copy is stored.
+[ ] The local server remains under trusted administrative control.
+[ ] Documentation does not claim off-server key custody is verified.
 ```
 
-The governance backup is also encrypted.
+## 12. Closure / Summary
 
-The age private key is intentionally excluded from the governance backup. If the private key were included, anyone with the backup set could decrypt the backup set.
-
----
-
-## 8. Key custody model
-
-The private key must be backed up off-server.
-
-WPGovern can record:
-
-```text
-The operator acknowledged that key backup was completed.
-```
-
-WPGovern cannot prove:
-
-```text
-The key exists in off-server storage.
-The key can be retrieved by the right person.
-The storage system remains available.
-```
-
-Therefore WPG-DR-01 must always use “acknowledged” or “operator-attested,” not “verified.”
-
----
-
-## 9. Audit model
-
-The audit command should be:
-
-```text
-boringly predictable, brutally honest, immediately useful.
-```
-
-Audit output must distinguish:
-
-| Result | Meaning |
-|---|---|
-| PASS | currently acceptable |
-| WARN | attention recommended |
-| FAIL | required condition broken |
-
-Audit output should never silently hide a known failure. If a probe cannot run, the audit should make that visible according to its exit-code contract.
-
----
-
-## 10. Restore trust model
-
-Restore is destructive.
-
-The restore procedure assumes:
-
-- the operator has selected the correct backup timestamp,
-- the private key is available,
-- the target host has completed required install phases,
-- the operator understands current data may be overwritten.
-
-Future UX must treat restore as a guarded workflow, not a casual button.
-
-At minimum, restore UX must include:
-
-- validation step,
-- consequence summary,
-- explicit typed confirmation,
-- recorded attestation,
-- raw command and exit-code evidence.
-
----
-
-## 11. Local Console security model
-
-A future WPGovern Local Console must remain local and single-tenant.
-
-It must not become a fleet SaaS or a public remote control plane.
-
-Initial console work should be read-only:
-
-```text
-status, evidence, audit summary, backup health, DR acknowledgement.
-```
-
-Destructive actions must not run directly inside HTTP request handlers. If action execution is added later, it must use controlled local job execution and preserve exact exit codes and evidence.
-
-A public unauthenticated console is forbidden.
-
----
-
-## 12. Evidence trust model
-
-WPGovern evidence is useful because it is explicit.
-
-Evidence should answer:
-
-```text
-What was checked?
-When was it checked?
-What was the result?
-What command produced the result?
-What action is recommended?
-What remains operator-attested rather than machine-verified?
-```
-
-Evidence must not overclaim. This is especially important for off-server key custody.
-
----
-
-## 13. Security review checklist
-
-Before making a security claim, confirm:
-
-```text
-[ ] No known audit FAIL findings remain.
-[ ] Backup and restore-test status are current.
-[ ] age key backup is acknowledged.
-[ ] Secrets are not printed by normal commands.
-[ ] Restore procedures are documented.
-[ ] Local console, if present, is not publicly exposed without protection.
-[ ] Documentation uses “acknowledged” rather than “verified” for key custody.
-```
-
----
-
-## 14. Institutional trust statement
-
-WPGovern should be presented honestly:
-
-```text
-WPGovern provides governed installation, operational audit, encrypted recovery, and evidence discipline for a single WordPress installation.
-It reduces operational ambiguity.
-It does not eliminate operator responsibility.
-```
-
-That honesty is part of the trust model.
+WPGovern v1.0.0 provides disciplined governance, auditability, and encrypted recoverability for a single WordPress installation. Its trust model is strongest when the operator understands the boundary: WPGovern records and checks what it can observe; the operator remains responsible for root control, key custody, and institutional decisions outside the machine.
