@@ -422,7 +422,7 @@ These tests silently skipped every run post-H.5.1 because they referenced the de
 
 **Fix:** Inline `case "$-" in *x*)` guard at function entry with `local _restore_xtrace=1` and matching `[[ -n "${_restore_xtrace:-}" ]] && set -x` before each return path. Identical pattern to H.4.1-2's `load_env` protection.
 
-**Why the upstream helper doesn't propagate:** `_wpgovern_disable_xtrace_for_credentials` (from `core/credentials.sh`) protects within its calling function's scope. When the orchestrator calls it inside `run_full`, xtrace is disabled for that function's body — but NOT for any functions it calls downstream. Each credential-touching function is its own protection scope.
+**Why the orchestrator's helper doesn't propagate:** `_wpgovern_disable_xtrace_for_credentials` (from `core/credentials.sh`) protects within its calling function's scope. When the orchestrator calls it inside `run_full`, xtrace is disabled for that function's body — but NOT for any functions it calls downstream. Each credential-touching function is its own protection scope.
 
 **Discipline rule (registered):** Every audit function that reads a credential value into a local variable or substitutes one into a subprocess invocation MUST apply the inline xtrace guard at function entry. Audit: `grep -rn "WPGOVERN_DB_\|PASSWORD" modules/audit/` — all matches must be inside guarded functions.
 
@@ -430,7 +430,7 @@ These tests silently skipped every run post-H.5.1 because they referenced the de
 
 ### H.6.1-2 (Medium) — `test_h6_probes_layer1_5.bats` with isolated behavioral probe unit tests
 
-**Defect:** The phase's design called for this file; it wasn't shipped in the initial pass. Prior coverage in `test_h6_orchestrator.bats` mocked probe functions at the dispatcher level — useful but not equivalent to isolated probe-logic coverage.
+**Defect:** H.6 brief Section 3 H.6-10 named this file; it wasn't shipped. Prior coverage in `test_h6_orchestrator.bats` mocked probe functions at the dispatcher level — useful but not equivalent to isolated probe-logic coverage.
 
 **Fix:** Six tests in the new file, each sourcing `behavioral.sh` directly and mocking only external commands (docker, curl):
 - Redis writeback PASS (SET/GET/TTL round-trip — mock captures actual SET value)

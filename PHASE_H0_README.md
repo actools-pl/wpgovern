@@ -141,7 +141,7 @@ The `wordpress:cli` image (profile-gated `cli` service) contains the wp-cli bina
 
 ## What is explicitly NOT in H.0 scope
 
-Per the project's scope discipline:
+Per the brief (Section 3):
 
 - **wp-content/plugins and wp-content/themes hashing** — delegated to Wordfence, Sucuri, MalCare per v1.1 decision
 - **Reconciliation workflow for legitimate config changes** — the existing four-stage approval workflow is the reconciliation workflow

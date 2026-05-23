@@ -5,7 +5,43 @@ Format: version / phase / date / summary / test count.
 
 ---
 
-## H.7 — Backup, Governance-Aware Restore, and Deployment Close (May 2026)
+## H.7.2 — Final Hardening Pass, Bash Arc Closure (May 2026)
+
+**398 bats tests · 776 Python unchanged · 42 bash files unchanged · core/state.sh zero diff**
+
+Five closure blockers from H.7.1 bounded external review. After H.7.2, H.7 closes on internal verdict (Lesson 9 refinement). **The bash arc is complete. v1 ships.**
+
+### Five blockers closed
+
+H.7.2-1: PIPESTATUS-safe `set +e`/`set -e` bracket — H.7.1-3's "tar exit 1 acceptable" semantics now actually engage under `set -euo pipefail`. H.7.2-2: both backup timer entry scripts (`full_backup_entry.sh`, `binlog_rotate_entry.sh`) now use `resolve_default_state_file`; CI guard enforces zero `/var/lib/wpgovern/.state.json` hardcoding across ALL module entry scripts. H.7.2-3: binlog default path corrected from `/var/lib/mysql/binlogs` (native host) to `${WPGOVERN_INSTALL_DIR}/mariadb/data` (Docker volume mount layout). H.7.2-4: restore validate uses full `age -d >/dev/null` — eliminates SIGPIPE from `head -c 256` on large backups under pipefail. H.7.2-5: PITR fail-closed when `backup.${ts}.binlog_file` state-fact missing AND binlogs exist — data-corruption path refused with exit 13 and operator-actionable error message.
+
+### Three methodology refinements registered at H.7 closure
+
+Lesson 11 (NEW): doctrine-vs-implementation audit. Lesson 9 second refinement: four-role review architecture as standard procedure. Lesson 2 eighth refinement: pattern-match assumption / discipline-travel between sibling modules. METHODOLOGY_NOTES: 11 lessons + 8 refinements + 8 milestones.
+
+### Internal verdict closure per Lesson 9 refinement
+
+No further external review. Bounded review at H.7.1 was the final external review of the bash arc; H.7.2 closes on internal verdict. The bash arc completes. The system is **governed AND operable AND recoverable**.
+
+---
+
+
+
+**385 bats tests · 776 Python unchanged · 42 bash files unchanged**
+
+Thirteen items: 9 external review blockers + 3 late-stage internal + 1 supporting. All production-correctness surfaces.
+
+### Nine external review blockers
+H.7.1-1: `backup_user` → `wpbackup` (9 sites, 4 files; H.3 username mismatch). H.7.1-2: keygen wrong-mode recovery — chmod 600 in place, no rotation (existing backups preserved). H.7.1-3: governance tarball PIPESTATUS (tar exit 2 now fatal; no more `|| true`). H.7.1-4: binlog discovery via SHOW MASTER STATUS (inverted -newer predicate fixed; RPO genuine). H.7.1-5: PITR target-range — records master-data position during backup; restores only after-position binlogs. H.7.1-6: decryptability check in validate phase — corrupt file/wrong key → exit 10 not 12/13. H.7.1-7: state-path shared helper `resolve_default_state_file` in state.sh; both entry scripts updated (latent H.6.2-3 defect closed). H.7.1-8: systemd fail-closed — no `|| true` on systemctl calls. H.7.1-9: restore subcommand regex validation — unknown input exits 2.
+
+### Three late-stage internal findings
+H.7.1-10: restore_test explicit cleanup (supporting). H.7.1-11: logical-completion sentinels — wp_options + Dump completed, streaming. H.7.1-12: flock on set_fact/mark_phase_complete/mark_phase_failed — midnight boundary race fixed. H.7.1-13: container readiness polling in both entry scripts — 30s mariadb-admin ping loop.
+
+### All five H.7 doctrine claims now hold empirically.
+
+---
+
+
 
 **358 bats tests · 776 Python unchanged · 42 bash files (+11 modules + systemd units)**
 
@@ -71,13 +107,13 @@ Third bash-arc round where external review surfaced doctrine-vs-implementation g
 
 **289 bats tests · 776 Python unchanged · zero bash-file additions**
 
-Two blockers surfaced from internal verification, each closing a known defect class.
+Two blockers surfaced from internal verification, each providing the second observation for a held methodology candidate.
 
 ### H.6.1-1 (High) — Xtrace guard in `_audit_probe_mariadb_reachable`
-H.4.1-2 defect class in sibling module. `WPGOVERN_DB_WP_PASSWORD` read without xtrace protection → 5 leak occurrences under bash -x. Fixed with `case "$-" in *x*)` guard pattern, identical to H.4.1-2's load_env protection. Credential audit: only this function in audit modules reads credentials. **Second data point for an internal pattern around function-level xtrace protection.**
+H.4.1-2 defect class in sibling module. `WPGOVERN_DB_WP_PASSWORD` read without xtrace protection → 5 leak occurrences under bash -x. Fixed with `case "$-" in *x*)` guard pattern, identical to H.4.1-2's load_env protection. Credential audit: only this function in audit modules reads credentials. **Second data point for methodology candidate: "function-level xtrace protection doesn't propagate down call stack."**
 
 ### H.6.1-2 (Medium) — `test_h6_probes_layer1_5.bats` (6 tests)
-Phase-design-named file not shipped in H.6. Prior coverage in test_h6_orchestrator.bats was dispatcher-level (mock bypassed probe logic). New file: isolated probe-logic coverage sourcing behavioral.sh directly, mocking only docker/curl. Redis round-trip PASS+WARN, trusted-host PASS+FAIL branching, cache-headers FAIL, login WARN, fix-ID catalog cross-verification. **Second data point for an internal methodology pattern around test-name-vs-test-behavior alignment.** Also fixed `cc_val=$(grep)` under set -e in behavioral.sh.
+Brief-named file not shipped in H.6. Prior coverage in test_h6_orchestrator.bats was dispatcher-level (mock bypassed probe logic). New file: isolated probe-logic coverage sourcing behavioral.sh directly, mocking only docker/curl. Redis round-trip PASS+WARN, trusted-host PASS+FAIL branching, cache-headers FAIL, login WARN, fix-ID catalog cross-verification. **Second data point for methodology candidate: "test-name-vs-test-behavior alignment."** Also fixed `cc_val=$(grep)` under set -e in behavioral.sh.
 
 ---
 
@@ -726,7 +762,7 @@ Security findings from independent production-readiness review (external review,
 - **α-3:** `validate_store` enforces cryptographic keypair match via shared `_verify_keypair_cryptographic_match` helper. Same contract as `I-T-4`.
 - **α-4:** Journaled commit failure now invokes in-process recovery synchronously.
 - **α-5:** `I-AUD-2` chain-tail invariant — fires when uncovered tail exceeds `MAX_TAIL_WINDOW`.
-- **α-6:** Cleanup CI guard added. All remaining external-reference labels removed from source.
+- **α-6:** Reviewer-name leakage CI guard added. All remaining reviewer-name references removed from source.
 
 ---
 
@@ -779,7 +815,7 @@ Security findings from independent production-readiness review (external review,
 - `activate_key`: JSON and active symlink staged in same `AtomicTransaction`.
 - `validate_store`: path-inside-tree enforcement.
 - `I-T-3`, `I-T-4`, `I-T-5` invariants added.
-- External-reference cleanup throughout codebase.
+- Reviewer-reference cleanup throughout codebase.
 
 ---
 

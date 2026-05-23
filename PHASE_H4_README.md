@@ -176,7 +176,7 @@ After fix: zero BW01 warnings across the full bats suite.
 
 ## H.4.1 hardening note
 
-**H.4 implementation correct on core property.** wp-config.php determinism verified by external review (10/10 sha256 match). Five integration/hygiene blockers identified during external review.
+**H.4 implementation correct on core property.** wp-config.php determinism verified by external review (10/10 sha256 match). Five integration/hygiene blockers identified by third deployment of the layered review architecture.
 
 **Five blockers closed:**
 

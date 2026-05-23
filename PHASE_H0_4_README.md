@@ -95,7 +95,7 @@ This is verified by existing integration tests:
 - `test_check_returns_53_when_config_file_deleted`
 - `test_check_returns_53_when_config_file_replaced_by_symlink`
 
-The dedicated-check-first ordering was a deliberate design choice from H.0.1 hardening (v49).
+The dedicated-check-first ordering was Sonnet's deliberate design from H.0.1 hardening (v49).
 v52 preserves it.
 
 ---

@@ -47,7 +47,7 @@ All functions follow `wpgovern::<subsystem>::<module>::<verb>`:
 | Host Docker | `wpgovern::host::docker::install` |
 | Host logrotate | `wpgovern::host::logrotate::configure` |
 
-**Note on actools reference:** The function namespacing pattern (`wpgovern::module::submodule::verb`) was applied following the colon-double-colon convention shown in the project's design conventions. Direct access to the actoolsDrupal-main codebase was not available during implementation; the design conventions in the relevant documentation were used as the reference for naming convention. If a future review against actoolsDrupal-main finds a deviation, the deviation should be documented in the next phase.
+**Note on actools reference:** The function namespacing pattern (`wpgovern::module::submodule::verb`) was applied following the colon-double-colon convention shown in the H.1 brief. Direct access to the actoolsDrupal-main codebase was not available during implementation; the brief's illustrative contract snippets were used as the reference for naming convention. If a future review against actoolsDrupal-main finds a deviation, the deviation should be documented in the next phase brief.
 
 ---
 
@@ -104,7 +104,7 @@ sudo ./wpgovern-install.sh --env-file wpgovern.env --force-firewall
 
 ## What H.1 does NOT do
 
-Per the project's scope discipline for this phase:
+Per the brief's scope discipline:
 
 - **No Docker Compose stack generation** — that is H.2
 - **No Caddyfile, my.cnf** — H.2

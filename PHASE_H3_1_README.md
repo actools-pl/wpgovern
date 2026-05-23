@@ -10,7 +10,7 @@
 
 ## Context
 
-H.3 closed the credentials-not-in-logs guarantee in normal shell mode. Seven blockers escaped, identified during external review. Two trace to brief-authorship gaps; five are implementation/test discipline gaps.
+H.3 closed the credentials-not-in-logs guarantee in normal shell mode. Seven blockers escaped, identified by the layered review architecture. Two trace to brief-authorship gaps; five are implementation/test discipline gaps.
 
 ---
 
